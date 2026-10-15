@@ -139,7 +139,14 @@ final class App: NSObject, NSApplicationDelegate {
             if let a { self.answer(id, a) }
         }
         #endif
-        try? SMAppService.mainApp.register() // start at login
+        // start at login the first time; after that the "Open at Login" switch in the ⋯ menu decides
+        if !UserDefaults.standard.bool(forKey: "setUpLogin") {
+            try? SMAppService.mainApp.register()
+            UserDefaults.standard.set(true, forKey: "setUpLogin")
+        }
+        // already connected to Claude Code but from an old copy of the app (moved, renamed): follow it quietly
+        if ClaudeHooks.added && !ClaudeHooks.connected() { try? ClaudeHooks.connect() }
+        dashboard.claudeConnected = ClaudeHooks.connected() || !ClaudeHooks.claudeInstalled
         hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.refreshUsage() }
@@ -263,7 +270,8 @@ final class App: NSObject, NSApplicationDelegate {
             pick: { [weak self] id in self?.hideDashboard(); self?.pick(id) },
             pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
             editPatterns: { [weak self] in self?.hideDashboard(); self?.editPatterns() },
-            openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() }))
+            openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() },
+            connectClaude: { [weak self] in self?.connectClaude() }))
         host.sizingOptions = [.intrinsicContentSize] // still reports its size, but leaves placing the window to us, pinned to the top of the screen
         let panel = NotchPanel(host, raised: 4) // above any card sitting in the notch
         panel.dismiss = { [weak self] in self?.hideDashboard() }
@@ -557,6 +565,17 @@ final class App: NSObject, NSApplicationDelegate {
 
     func openAutomationSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
+    }
+
+    func connectClaude() {
+        do {
+            try ClaudeHooks.connect()
+            log("connected Claude Code hooks: \(ClaudeHooks.command)")
+        } catch {
+            log("couldn't connect Claude Code hooks: \(error)")
+            NSSound.beep()
+        }
+        dashboard.claudeConnected = ClaudeHooks.connected()
     }
 
     func editPatterns() {

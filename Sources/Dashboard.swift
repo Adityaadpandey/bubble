@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 enum TabState { case waiting, working, idle }
@@ -13,6 +14,7 @@ final class Dashboard: ObservableObject {
     @Published var tabs: [TabStatus] = []
     @Published var pausedUntil: Date?
     @Published var accessDenied = false
+    @Published var claudeConnected = true
     @Published var usage: [Usage] = []
     var usageAt = Date.distantPast
     var notch = CGSize.zero
@@ -29,6 +31,7 @@ struct DashboardView: View {
     let pause: (Date?) -> Void
     let editPatterns: () -> Void
     let openSettings: () -> Void
+    let connectClaude: () -> Void
 
     // idle tabs are just noise here, only show the ones that need you or are busy
     private var busy: [TabStatus] { model.tabs.filter { $0.state != .idle } }
@@ -41,6 +44,18 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain).foregroundStyle(.orange).padding(12)
+                Divider()
+            }
+            if !model.claudeConnected {
+                Button(action: connectClaude) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Connect Claude Code", systemImage: "link")
+                        Text("Shows the diff or command on each card, and pings you when Claude is done")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.accentColor).padding(12)
                 Divider()
             }
 
@@ -83,7 +98,15 @@ struct DashboardView: View {
                 Spacer()
                 Menu {
                     Button("Edit prompt patterns…", action: editPatterns)
+                    if !model.claudeConnected { Button("Connect Claude Code", action: connectClaude) }
+                    Toggle("Open at Login", isOn: Binding(
+                        get: { SMAppService.mainApp.status == .enabled },
+                        set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
                     Divider()
+                    Button("About Perch") {
+                        NSApp.activate()
+                        NSApp.orderFrontStandardAboutPanel(nil)
+                    }
                     Button("Quit Perch") { NSApp.terminate(nil) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
