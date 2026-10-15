@@ -93,7 +93,7 @@ Hover over the notch (or click it) to see every tab that's waiting or working, p
 
 ### Works from the keyboard
 
-Press **⌃⌥Space** to put the keyboard on the top card. Press it again to move to the next one.
+Press **⌃⌥Space** (or the shortcut you picked in Settings) to put the keyboard on the top card. Press it again to move to the next one.
 
 | Key | Does |
 |---|---|
@@ -102,6 +102,16 @@ Press **⌃⌥Space** to put the keyboard on the top card. Press it again to mov
 | `←` / `→` | Move between questions |
 | `Tab` | Jump to the reply box |
 | `Esc` | Hand the keyboard back to your app |
+
+### Settings
+
+Open **⋯ → Settings…** to change:
+
+- **Alerts:** how long a prompt waits before Notchy reminds you again (or never), the sound, and the keyboard shortcut (or none).
+- **Which terminals to watch** and **which usage meters to show.** One you turn off is never read, so macOS never asks to let Notchy control it, and Claude's Keychain prompt is skipped if its meter is off.
+- **Look:** spacing, card width, text size and accent colour.
+
+Changes apply straight away, and cards you open next use the new look.
 
 ### And a few more things
 
