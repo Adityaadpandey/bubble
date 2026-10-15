@@ -114,6 +114,18 @@ import Foundation
         precondition(detectPrompt(screen: "aditya@mac notiapp % ", patterns: pats, quietFor: 60) == nil)
         precondition(keys(for: .reply("my-app"), in: detectPrompt(screen: name, patterns: pats, quietFor: 5)!).keys == ["my-app\r"])
 
+        // tmux, kitty and WezTerm listings: Claude panes are named, and only the one with the keyboard is in front
+        let tmux = parseTmuxPanes("%5\twork\tapi\tclaude\t1\t1\t1\n%6\twork\tdocs\tzsh\t0\t1\t1\n%7\tidle\tapi\tzsh\t1\t1\t0\n")
+        precondition(tmux.map(\.id) == ["%5", "%6", "%7"] && tmux.map(\.focused) == [true, false, false])
+        precondition(tmux.map(\.name) == ["Claude Code", "tmux work:docs", "tmux idle:api"])
+        let kitty = parseKittyWindows(Data(#"[{"is_focused":true,"tabs":[{"is_focused":true,"windows":[{"id":7,"title":"~","is_focused":true,"foreground_processes":[{"cmdline":["claude"]}]},{"id":8,"title":"zsh","is_focused":false,"foreground_processes":[]}]}]}]"#.utf8))
+        precondition(kitty.map(\.id) == ["7", "8"] && kitty.map(\.name) == ["Claude Code", "zsh"] && kitty.map(\.focused) == [true, false])
+        let wez = parseWezTermPanes(Data(#"[{"pane_id":4,"title":"claude"},{"pane_id":5,"title":"zsh"}]"#.utf8), clients: Data(#"[{"focused_pane_id":5}]"#.utf8))
+        precondition(wez.map(\.id) == ["4", "5"] && wez.map(\.name) == ["Claude Code", "zsh"] && wez.map(\.focused) == [false, true])
+        precondition(parseWezTermPanes(Data("[]".utf8), clients: nil).isEmpty && parseKittyWindows(Data("nope".utf8)).isEmpty)
+        // empty rows under the cursor are dropped so the prompt is the last thing on screen
+        precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
+
         // dashboard status from Claude's spinner
         precondition(claudeActivity("⏺ done\n✽ Cerebrating… (39s · ↓ 3.1k tokens)\n───\n❯ \n") == "Cerebrating… 39s")
         precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")

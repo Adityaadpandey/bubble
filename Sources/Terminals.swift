@@ -1,13 +1,6 @@
 import AppKit
 import Carbon
 
-// Where a tab lives, so the next call can jump straight to it instead of searching every window.
-// iTerm2 tabs go by iTerm2's session id, Terminal tabs by their tty, e.g. "/dev/ttys019".
-struct Session {
-    let id, name, tail: String
-    let window, tab, pane: Int
-}
-
 // Everything we ask iTerm2 and Terminal goes through here, on one background queue, so a slow Apple Event
 // never freezes the cards (reading every tab takes ~0.5s). Each app gets its own script with the same
 // handlers (readall, readone, sendkeys, focus). The scripts are compiled once and called with real
