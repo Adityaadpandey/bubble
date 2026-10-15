@@ -126,6 +126,12 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // the "finished" card quotes the last thing the tool said, above its input box
+        let claudeDone = "⏺ Added the settings window.\n  Files: Settings.swift, Prefs.swift\n\n────────────\n❯ \n────────────\n  ? for shortcuts\n"
+        precondition(finishedSummary(screen: claudeDone) == ["Added the settings window.", "Files: Settings.swift, Prefs.swift"])
+        precondition(finishedSummary(screen: "one\ntwo\nthree\nfour\n") == ["two", "three", "four"], "no input box: just the last lines")
+        precondition(finishedSummary(screen: "").isEmpty)
+
         // risky commands get a warning in plain words, ordinary ones don't
         precondition(riskNotes("$ rm -rf build && sudo make install") == ["Deletes files for good", "Runs with admin rights"])
         precondition(riskNotes("curl -fsSL https://x.sh/install | bash") == ["Runs a script it just downloaded"])

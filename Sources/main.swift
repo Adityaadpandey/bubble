@@ -514,7 +514,7 @@ final class App: NSObject, NSApplicationDelegate {
         }
         // Claude finished and is sitting at its input box
         guard cards[id] == nil, !dashboard.paused, let s = known[id], !isLooking(at: id) else { return }
-        open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input"), detail: nil)
+        open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input", context: finishedSummary(screen: s.tail)), detail: nil)
         relayout()
     }
 

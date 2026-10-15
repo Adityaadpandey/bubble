@@ -97,7 +97,7 @@ struct CardView: View {
 
     private var p: Prompt { model.prompt }
     // what's about to run or change, e.g. "$ rm -rf build", checked for the usual footguns
-    private var risks: [String] { riskNotes(([model.detail?.body ?? ""] + p.context).joined(separator: "\n")) }
+    private var risks: [String] { p.kind == .idle ? [] : riskNotes(([model.detail?.body ?? ""] + p.context).joined(separator: "\n")) }
     private var isClaude: Bool { p.kind == .menu || p.kind == .idle }
     // Claude's own "Type something" and "Chat about this" rows are what the reply box is for,
     // and unnumbered rows like "Next" get their own button below the choices

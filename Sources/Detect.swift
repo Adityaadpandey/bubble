@@ -243,3 +243,26 @@ func claudeActivity(_ screen: String) -> String? {
     }
     return nil
 }
+
+/// The last few lines of what a tool said before it stopped, for the "finished" card, e.g. for
+///     ⏺ Added the settings window.
+///       Files: Settings.swift, Prefs.swift
+///     ────────────────
+///     ❯
+///     ────────────────
+///       ? for shortcuts
+/// that's ["Added the settings window.", "Files: Settings.swift, Prefs.swift"]. The input box and everything below
+/// it are skipped, found by the line of ─ that sits above it, and a screen with none just uses its last lines.
+func finishedSummary(screen: String, lines count: Int = 3) -> [String] {
+    let raw = screen.components(separatedBy: .newlines)
+    let isDivider = { (l: String) in l.contains("──") && l.trimmingCharacters(in: trimSet).isEmpty }
+    // the divider above the input box is the last one that has text above it, walking up from the bottom
+    var end = raw.count
+    var dividers = raw.indices.filter { isDivider(raw[$0]) }
+    if dividers.count >= 2 { dividers.removeLast(); end = dividers.last ?? end }
+    else if let only = dividers.first { end = only }
+    return raw[..<end].map { $0.trimmingCharacters(in: trimSet) }
+        .filter { !$0.isEmpty }
+        .suffix(count)
+        .map { String($0.replacingOccurrences(of: #"^[⏺●•]\s*"#, with: "", options: .regularExpression).prefix(140)) }
+}
