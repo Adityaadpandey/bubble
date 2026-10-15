@@ -260,6 +260,9 @@ final class App: NSObject, NSApplicationDelegate {
                         card.prompt = found
                     }
                     card.snapshot = s.tail
+                } else if card.prompt.kind == .idle, Date().timeIntervalSince(card.since) < 3 {
+                    // a tool redraws its footer just after it finishes (pi's token count, say), which isn't you moving on
+                    card.snapshot = s.tail
                 } else if !(card.prompt.kind == .idle && s.tail == card.snapshot) {
                     close(s.id, "prompt gone from screen") // answered, here or in the terminal
                     continue
