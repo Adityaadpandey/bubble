@@ -7,6 +7,7 @@ enum Prefs {
     static let defaults: [String: Any] = [
         "nudgeSeconds": 120,     // how long a prompt waits before the second ping, 0 = never
         "sound": "Glass",        // a macOS system sound by name, "" = silent
+        "updates.check": false,  // off: Notchy never talks to GitHub unless you turn this on
         "quiet.on": false, "quiet.from": 22, "quiet.to": 8, // no chime between these hours
         "shortcut": "ctrlOptSpace",
         "watch.iterm": true, "watch.terminal": true, "watch.tmux": true, "watch.kitty": true, "watch.wezterm": true,
@@ -28,7 +29,7 @@ enum Prefs {
     }
 
     // the pieces of Settings that need something redone when they change (the hotkey, the usage meters)
-    static var watchedChoices: String { ["shortcut", "meter.Claude", "meter.Codex", "meter.Command Code"].map { "\($0)=\(string($0))\(bool($0))" }.joined() }
+    static var watchedChoices: String { ["shortcut", "updates.check", "meter.Claude", "meter.Codex", "meter.Command Code"].map { "\($0)=\(string($0))\(bool($0))" }.joined() }
 }
 
 /// Is `hour` inside quiet hours, which may run past midnight? 22 to 8 covers 23, 0 and 7 but not 8 or 12, and 9 to 17 is a work day.

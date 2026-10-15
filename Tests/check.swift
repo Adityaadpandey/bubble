@@ -126,6 +126,10 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // updates compare numbers, not text
+        precondition(isNewer("v1.10", than: "1.9") && isNewer("1.2.1", than: "1.2") && isNewer("2", than: "1.9.9"))
+        precondition(!isNewer("1.2", than: "1.2") && !isNewer("v1.2.0", than: "1.2") && !isNewer("1.1", than: "1.2"))
+
         // quiet hours can run past midnight; the same start and end means there are none
         precondition([23, 0, 7].allSatisfy { isQuiet(hour: $0, from: 22, to: 8) } && ![8, 12, 21].contains { isQuiet(hour: $0, from: 22, to: 8) })
         precondition(isQuiet(hour: 9, from: 9, to: 17) && !isQuiet(hour: 17, from: 9, to: 17) && !isQuiet(hour: 5, from: 6, to: 6))

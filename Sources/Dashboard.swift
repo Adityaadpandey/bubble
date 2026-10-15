@@ -16,6 +16,7 @@ final class Dashboard: ObservableObject {
     @Published var accessDenied = false
     @Published var claudeConnected = true
     @Published var usage: [Usage] = []
+    @Published var update: (version: String, page: URL)? // a newer release, only looked for if Settings says to
     var usageAt = Date.distantPast
     var notch = CGSize.zero
     @Published var leaving = false
@@ -100,6 +101,7 @@ struct DashboardView: View {
                 }
                 Spacer()
                 Menu {
+                    if let u = model.update { Button("Update to \(u.version)…") { NSWorkspace.shared.open(u.page) } }
                     Button("Settings…", action: showSettings)
                     Button("Edit prompt patterns…", action: editPatterns)
                     if !model.claudeConnected { Button("Connect Claude Code", action: connectClaude) }

@@ -205,6 +205,7 @@ final class App: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.applyChoices()
         }
+        Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in self?.checkForUpdate() }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             guard let self, !self.usageWaits, self.welcome == nil else { return }
@@ -224,6 +225,14 @@ final class App: NSObject, NSApplicationDelegate {
         hotKey = nil // the old one is unregistered as it goes
         hotKey = Shortcut.hotKey(Prefs.string("shortcut")) { [weak self] in self?.summon() }
         if !first { refreshUsage() }
+        checkForUpdate()
+    }
+
+    // Once a day, and when you switch it on in Settings. Does nothing unless you've asked for it.
+    func checkForUpdate() {
+        guard Prefs.bool("updates.check") else { return dashboard.update = nil }
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        UpdateCheck.newer(than: current) { [weak self] found in self?.dashboard.update = found }
     }
 
     // MARK: watching

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("nudgeSeconds") private var nudge = 120
     @AppStorage("sound") private var sound = "Glass"
     @AppStorage("shortcut") private var shortcut = "ctrlOptSpace"
+    @AppStorage("updates.check") private var checkUpdates = false
     @AppStorage("quiet.on") private var quietOn = false
     @AppStorage("quiet.from") private var quietFrom = 22
     @AppStorage("quiet.to") private var quietTo = 8
@@ -44,6 +45,14 @@ struct SettingsView: View {
                     ForEach(Shortcut.choices, id: \.id) { Text($0.label).tag($0.id) }
                     Text("Off").tag("off")
                 }
+            }
+
+            Section {
+                Toggle("Check for updates", isOn: $checkUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Asks GitHub once a day which release is the newest and shows it in the ⋯ menu. Nothing else is sent, and it's off until you turn it on.")
             }
 
             Section {
