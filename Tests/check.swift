@@ -110,6 +110,14 @@ import Foundation
         precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")
         precondition(claudeActivity("⏺ All done, the build passes.\n❯ ") == nil)
 
+        // usage limits, from responses shaped like the real ones
+        let codex = parseCodex(#"{"rate_limit":{"primary_window":{"used_percent":38,"limit_window_seconds":18000,"reset_at":1786340818},"secondary_window":{"used_percent":5,"limit_window_seconds":604800,"reset_at":1786900000}}}"#.data(using: .utf8)!)!
+        precondition(codex.map(\.label) == ["5h", "Week"] && codex[0].used == 0.38 && codex[0].resetsAt == Date(timeIntervalSince1970: 1786340818))
+        precondition(parseCodex(#"{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":2592000,"reset_at":1}}}"#.data(using: .utf8)!)!.first?.label == "Month")
+        let cc = parseCommandCode(#"{"windowLimits":{"fiveHour":{"used":0,"cap":14,"resetAt":0},"weekly":{"used":31.5,"cap":35,"resetAt":1792105359547}}}"#.data(using: .utf8)!)!
+        precondition(cc.map(\.label) == ["5h", "Week"] && cc[0].resetsAt == nil && cc[1].used == 0.9)
+        precondition(parseCodex(Data("{}".utf8)) == nil && parseCommandCode(Data("not json".utf8)) == nil)
+
         print("all checks passed")
     }
 }

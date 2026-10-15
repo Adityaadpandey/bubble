@@ -12,7 +12,7 @@ debug: install
 
 check:
 	mkdir -p build
-	swiftc -parse-as-library Sources/Detect.swift Tests/check.swift -o build/check
+	swiftc -parse-as-library Sources/Detect.swift Sources/Usage.swift Tests/check.swift -o build/check
 	build/check
 
 install: build
