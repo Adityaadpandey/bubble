@@ -1,6 +1,5 @@
 import AppKit
 import ServiceManagement
-import UserNotifications
 
 let iTermID = "com.googlecode.iterm2"
 let hookNote = Notification.Name("dev.notiapp.hook")
@@ -36,13 +35,12 @@ if CommandLine.arguments.dropFirst().first == "hook" {
 
 struct Session { let id, name, tail: String }
 
-final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class App: NSObject, NSApplicationDelegate {
     struct Pending { let prompt: Prompt; let snapshot: String }
 
-    var pending: [String: Pending] = [:]       // one open notification per iTerm2 session
+    var pending: [String: Pending] = [:]       // one waiting prompt per iTerm2 session
     var claudeDetail: [String: String] = [:]   // latest "Bash: npm install" per session, from the hook
     var patterns: [NSRegularExpression] = []
-    let center = UNUserNotificationCenter.current()
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let warning = NSMenuItem(title: "", action: #selector(openAutomationSettings), keyEquivalent: "")
 
@@ -63,9 +61,6 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
             try? (header + defaultPatterns.joined(separator: "\n") + "\n").write(to: patternsFile, atomically: true, encoding: .utf8)
         }
 
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(hook(_:)), name: hookNote, object: nil)
         try? SMAppService.mainApp.register() // start at login
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.tick() }
@@ -81,7 +76,7 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
         for s in sessions {
             let found = detectPrompt(screen: s.tail, patterns: patterns)
             if let p = pending[s.id] {
-                // answered in the terminal (or it moved on), so pull the stale notification
+                // answered in the terminal (or it moved on), so pull the stale card
                 if !stillThere(p, tail: s.tail, found: found) { clear(s.id) }
                 continue
             }
@@ -89,7 +84,7 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
             pending[s.id] = Pending(prompt: found, snapshot: s.tail)
             // the hook told us what Claude wants to run, e.g. "Bash: npm install left-pad"
             let detail = found.kind == .claude ? claudeDetail.removeValue(forKey: s.id) : nil
-            notify(s.id, title: s.name, subtitle: detail, body: found.line.isEmpty ? "Waiting for you" : found.line, prompt: found)
+            show(s.id, title: s.name, detail: detail, prompt: found)
         }
     }
 
@@ -113,79 +108,87 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
               let s = sessions.first(where: { $0.id == id }), !isLooking(at: id, front: front) else { return }
         let prompt = Prompt(kind: .idle, line: text)
         pending[id] = Pending(prompt: prompt, snapshot: s.tail)
-        notify(id, title: s.name, subtitle: nil, body: text, prompt: prompt)
+        show(id, title: s.name, detail: nil, prompt: prompt)
     }
 
-    // MARK: notifications
+    // MARK: popups
 
-    var categories: [String: UNNotificationCategory] = [:] // one per session, buttons depend on the prompt
+    var panels: [String: PromptPanel] = [:]
+    var order: [String] = [] // oldest card on top, newer ones stack below it
 
-    func notify(_ id: String, title: String, subtitle: String?, body: String, prompt: Prompt) {
-        let reply = UNTextInputNotificationAction(identifier: "reply", title: "Reply…", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "Type your answer")
-        let actions: [UNNotificationAction]
+    func show(_ id: String, title: String, detail: String?, prompt: Prompt) {
+        let choices: [Choice]
         switch prompt.kind {
         case .claude:
             // a button per menu choice, e.g. "1. Yes" / "2. Yes, and don't ask again" / "3. No".
-            // Claude's own "Type something." and "Chat about this" are what Reply… is for.
-            actions = prompt.options.enumerated()
+            // Claude's own "Type something." and "Chat about this" are what the Reply box is for.
+            choices = prompt.options.enumerated()
                 .filter { !["Type something.", "Chat about this"].contains($0.element) }
-                .map { UNNotificationAction(identifier: "opt-\($0.offset + 1)", title: "\($0.offset + 1). \($0.element)") } + [reply]
+                .map { Choice(id: "opt-\($0.offset + 1)", label: "\($0.offset + 1). \($0.element)") }
         case .yesNo:
-            actions = [UNNotificationAction(identifier: "approve", title: "Approve"),
-                       UNNotificationAction(identifier: "deny", title: "Deny", options: .destructive), reply]
+            choices = [Choice(id: "approve", label: "Yes"), Choice(id: "deny", label: "No")]
         case .idle:
-            actions = [reply]
+            choices = []
         }
-        categories[id] = UNNotificationCategory(identifier: "cat-\(id)", actions: actions, intentIdentifiers: [])
-        center.setNotificationCategories(Set(categories.values))
+        dismiss(id)
+        let card = PromptCard(title: title, detail: detail, question: prompt.line.isEmpty ? "Waiting for you" : prompt.line,
+                              choices: choices) { [weak self] action, text in
+            DispatchQueue.main.async { self?.handle(id, action, text) } // let the button finish before its card closes
+        }
+        let panel = PromptPanel(card)
+        panels[id] = panel
+        order.append(id)
+        layout()
+        panel.orderFrontRegardless()
+        NSSound(named: "Glass")?.play()
+    }
 
-        let c = UNMutableNotificationContent()
-        c.title = title
-        c.subtitle = subtitle ?? ""
-        c.body = body
-        c.sound = .default
-        c.categoryIdentifier = "cat-\(id)"
-        // the session id doubles as the notification id, so each tab has at most one.
-        // Reading the categories back first makes sure the new buttons are registered before it shows.
-        center.getNotificationCategories { _ in
-            self.center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+    func layout() {
+        guard let screen = NSScreen.main?.visibleFrame else { return }
+        var top = screen.maxY - 12
+        for id in order {
+            guard let p = panels[id] else { continue }
+            p.setFrameOrigin(NSPoint(x: screen.maxX - p.frame.width - 12, y: top - p.frame.height))
+            top -= p.frame.height + 10
         }
+    }
+
+    // Hides the card but keeps the prompt pending, so ✕ doesn't make it pop right back up
+    func dismiss(_ id: String) {
+        panels.removeValue(forKey: id)?.close()
+        order.removeAll { $0 == id }
+        layout()
     }
 
     func clear(_ id: String) {
         pending[id] = nil
-        center.removeDeliveredNotifications(withIdentifiers: [id])
+        dismiss(id)
     }
 
-    func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse, withCompletionHandler done: @escaping () -> Void) {
-        let id = r.notification.request.identifier
-        let action = r.actionIdentifier
-        let text = (r as? UNTextInputNotificationResponse)?.userText ?? ""
-        DispatchQueue.main.async {
-            defer { done() }
-            if action == UNNotificationDefaultActionIdentifier { return self.focus(id) }
-            guard let p = self.pending[id] else { return }
-            self.clear(id)
+    func handle(_ id: String, _ action: String, _ text: String) {
+        if action == "close" { return dismiss(id) }
+        if action == "open" { dismiss(id); return focus(id) }
+        guard let p = pending[id] else { return }
+        clear(id)
 
-            // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-            guard let s = self.readSessions()?.1.first(where: { $0.id == id }) else { return }
-            let now = detectPrompt(screen: s.tail, patterns: self.patterns)
-            guard self.stillThere(p, tail: s.tail, found: now) else { return }
+        // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
+        guard let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
+        let now = detectPrompt(screen: s.tail, patterns: patterns)
+        guard stillThere(p, tail: s.tail, found: now) else { return }
 
-            let down = "\u{1b}[B", up = "\u{1b}[A"
-            switch action {
-            case let a where a.hasPrefix("opt-"):
-                // walk the ❯ from wherever it is now to the chosen option, then Enter
-                let n = Int(a.dropFirst(4)) ?? 1, cursor = now?.cursor ?? 1
-                self.press(id, Array(repeating: n > cursor ? down : up, count: abs(n - cursor)) + ["\r"])
-            case "approve": self.press(id, ["y\r"])
-            case "deny": self.press(id, ["n\r"])
-            case "reply" where p.prompt.kind == .claude:
-                // back out of the menu, then give Claude your note once its input box is back
-                self.press(id, ["\u{1b}", text + "\r"], gap: 0.6)
-            case "reply": self.press(id, [text + "\r"])
-            default: break
-            }
+        let down = "\u{1b}[B", up = "\u{1b}[A"
+        switch action {
+        case let a where a.hasPrefix("opt-"):
+            // walk the ❯ from wherever it is now to the chosen option, then Enter
+            let n = Int(a.dropFirst(4)) ?? 1, cursor = now?.cursor ?? 1
+            press(id, Array(repeating: n > cursor ? down : up, count: abs(n - cursor)) + ["\r"])
+        case "approve": press(id, ["y\r"])
+        case "deny": press(id, ["n\r"])
+        case "reply" where p.prompt.kind == .claude:
+            // back out of the menu, then give Claude your note once its input box is back
+            press(id, ["\u{1b}", text + "\r"], gap: 0.6)
+        case "reply": press(id, [text + "\r"])
+        default: break
         }
     }
 
