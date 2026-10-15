@@ -89,6 +89,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.imageHugsTitle = true
         statusItem.button?.action = #selector(togglePopover)
         statusItem.button?.target = self
         popover.behavior = .transient
@@ -133,6 +134,8 @@ final class App: NSObject, NSApplicationDelegate {
         try? SMAppService.mainApp.register() // start at login
         hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.refreshUsage() }
+        refreshUsage()
     }
 
     // MARK: watching
@@ -214,17 +217,38 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func rank(_ s: TabState) -> Int { s == .waiting ? 0 : s == .working ? 1 : 2 }
 
-    // Bell with a count of waiting prompts, or a crossed out bell while paused
+    // Bell with a count of waiting prompts, or a crossed out bell while paused.
+    // Template images and the menu bar font, so it tints like the system icons in light, dark and on any wallpaper.
     func updateIcon() {
         if dashboard.pausedUntil != nil, !dashboard.paused { dashboard.pausedUntil = nil } // the hour is up
-        let symbol = dashboard.paused || dashboard.accessDenied ? "bell.slash" : dashboard.waiting > 0 ? "bell.badge.fill" : "bell"
-        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "NotiApp")
-        statusItem.button?.title = dashboard.waiting > 0 ? " \(dashboard.waiting)" : ""
+        let waiting = dashboard.waiting
+        let symbol = dashboard.paused || dashboard.accessDenied ? "bell.slash" : waiting > 0 ? "bell.fill" : "bell"
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "NotiApp")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
+        image?.isTemplate = true
+        guard let button = statusItem.button else { return }
+        button.image = image
+        button.attributedTitle = NSAttributedString(string: waiting > 0 ? "\(waiting)" : "", attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
+            .baselineOffset: 0.5,
+        ])
+        button.setAccessibilityLabel(waiting > 0 ? "NotiApp, \(waiting) waiting" : "NotiApp")
     }
 
     @objc func togglePopover() {
         guard let button = statusItem.button else { return }
-        if popover.isShown { popover.performClose(nil) } else { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
+        if popover.isShown { popover.performClose(nil); return }
+        if Date().timeIntervalSince(dashboard.usageAt) > 60 { refreshUsage() }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    // Plan limits for Codex and Command Code, every 5 minutes and whenever the dashboard opens after a minute
+    func refreshUsage() {
+        dashboard.usageAt = Date()
+        UsageFetcher.fetchAll { [weak self] usage in
+            guard let self, usage != self.dashboard.usage else { return }
+            self.dashboard.usage = usage
+        }
     }
 
     // A row in the dashboard: answer it on its card if it's waiting, otherwise jump to the tab
