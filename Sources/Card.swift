@@ -358,9 +358,12 @@ struct NotchChrome: ViewModifier {
         TimelineView(.animation(paused: settled && leftAt == nil)) { ctx in
             let opened = ctx.date.timeIntervalSince(openedAt)
             let closing = leftAt.map { ctx.date.timeIntervalSince($0) }
+            // Once settled it's simply open. Pausing the clock freezes it on its last frame, so if the window
+            // got no frames while opening (Mac busy, app napping) the card used to stay folded inside the notch.
+            let done = settled && leftAt == nil
             // grow: 0 = folded in the notch, 1 = full size. reveal: how visible the content is.
-            let grow = closing.map { 1 - smooth($0 / 0.15) } ?? springOpen(opened)
-            let reveal = closing.map { 1 - smooth($0 / 0.06) } ?? smooth((opened - 0.04) / 0.12)
+            let grow = done ? 1 : closing.map { 1 - smooth($0 / 0.15) } ?? springOpen(opened)
+            let reveal = done ? 1 : closing.map { 1 - smooth($0 / 0.06) } ?? smooth((opened - 0.04) / 0.12)
             chrome(content, grow: size == .zero ? 0 : grow, reveal: reveal)
         }
         .padding([.horizontal, .bottom], Self.margin)
