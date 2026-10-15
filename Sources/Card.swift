@@ -9,7 +9,7 @@ struct Detail {
     let at = Date()
 }
 
-enum CardAction { case answer(Answer), open, close }
+enum CardAction { case answer(Answer), open, close, release }
 
 // One live card per iTerm2 tab. App rewrites `prompt` every tick from the screen,
 // so ticking a box or moving to the next question updates this card instead of making a new one.
@@ -56,6 +56,12 @@ final class CardPanel: NSPanel {
     }
 
     func fit() { setContentSize(host.fittingSize) }
+
+    // clicked into another app, so the card is no longer listening to the keyboard
+    override func resignKey() {
+        super.resignKey()
+        host.rootView.model.keyboard = false
+    }
 }
 
 struct CardView: View {
@@ -63,6 +69,7 @@ struct CardView: View {
     let act: (CardAction) -> Void
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
+    @FocusState private var cardFocused: Bool
 
     private var p: Prompt { model.prompt }
     private var isClaude: Bool { p.kind != .yesNo }
@@ -112,6 +119,31 @@ struct CardView: View {
                 .strokeBorder(model.keyboard ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: model.keyboard ? 2 : 1)
         )
         .animation(.easeOut(duration: 0.15), value: model.waitingOnSend)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($cardFocused)
+        .onChange(of: model.keyboard) { _, on in cardFocused = on }
+        .onKeyPress(action: key)
+    }
+
+    // ⌃⌥Space put the keyboard on this card. 1–9 pick, Y/N for yes/no prompts, ←/→ between questions,
+    // Return does what Enter does in the terminal, Tab jumps to the reply box, Esc hands the keyboard back.
+    private func key(_ press: KeyPress) -> KeyPress.Result {
+        guard model.keyboard, !model.waitingOnSend else { return .ignored }
+        switch press.key {
+        case .escape: act(.release)
+        case .tab: replyFocused = true
+        case .leftArrow where !p.tabs.isEmpty: act(.answer(.prevTab))
+        case .rightArrow where !p.tabs.isEmpty: act(.answer(.nextTab))
+        case .return: pick(navRows.first ?? p.cursor)
+        default:
+            let c = press.characters.lowercased()
+            if let n = Int(c), n >= 1, n <= visibleRows.count { pick(visibleRows[n - 1]) }
+            else if p.kind == .yesNo, c == "y" { act(.answer(.yes)) }
+            else if p.kind == .yesNo, c == "n" { act(.answer(.no)) }
+            else { return .ignored }
+        }
+        return .handled
     }
 
     private var header: some View {
@@ -199,6 +231,7 @@ struct CardView: View {
                 .textFieldStyle(.plain)
                 .focused($replyFocused)
                 .onSubmit(send)
+                .onKeyPress(.escape) { act(.release); return .handled }
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 20))
             }

@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import Carbon
 import SwiftUI
 
 let iTermID = "com.googlecode.iterm2"
@@ -63,6 +64,7 @@ final class App: NSObject, NSApplicationDelegate {
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var patterns: [NSRegularExpression] = []
+    var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let warning = NSMenuItem(title: "", action: #selector(openAutomationSettings), keyEquivalent: "")
 
@@ -85,6 +87,7 @@ final class App: NSObject, NSApplicationDelegate {
 
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(hook(_:)), name: hookNote, object: nil)
         try? SMAppService.mainApp.register() // start at login
+        hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -192,9 +195,28 @@ final class App: NSObject, NSApplicationDelegate {
             hidden.insert(id)
             close(id)
             focus(id)
+        case .release:
+            release(id)
         case .answer(let a):
             answer(id, a)
         }
+    }
+
+    // ⌃⌥Space: put the keyboard on the top card, pressing it again moves on to the next card
+    func summon() {
+        guard !order.isEmpty else { return NSSound.beep() }
+        let current = order.firstIndex { cards[$0]?.keyboard == true }
+        let next = order[current.map { ($0 + 1) % order.count } ?? 0]
+        for (id, card) in cards { card.keyboard = id == next }
+        panels[next]?.makeKeyAndOrderFront(nil)
+    }
+
+    // Give the keyboard back to whatever app you were in. The card stays put.
+    func release(_ id: String) {
+        cards[id]?.keyboard = false
+        guard let panel = panels[id] else { return }
+        panel.orderOut(nil) // the app you were in gets its key window back
+        panel.orderFrontRegardless()
     }
 
     func answer(_ id: String, _ a: Answer) {
