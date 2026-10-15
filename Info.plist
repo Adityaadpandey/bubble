@@ -2,29 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key>
-    <string>dev.notchy.Notchy</string>
-    <key>CFBundleName</key>
-    <string>Notchy</string>
-    <key>CFBundleDisplayName</key>
-    <string>Notchy</string>
-    <key>CFBundleExecutable</key>
-    <string>Notchy</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>Lives in your notch and answers your terminal.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Notchy reads your iTerm2 and Terminal tabs to spot prompts waiting on you, and types your answer back into them.</string>
+	<key>CFBundleDisplayName</key>
+	<string>Notchy</string>
+	<key>CFBundleExecutable</key>
+	<string>Notchy</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.notchy.Notchy</string>
+	<key>CFBundleName</key>
+	<string>Notchy</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Notchy reads your iTerm2 and Terminal tabs to spot prompts waiting on you, and types your answer back into them.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Lives in your notch and answers your terminal.</string>
 </dict>
 </plist>
