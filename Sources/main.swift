@@ -4,10 +4,10 @@ import Carbon
 import Combine
 import SwiftUI
 
-let hookNote = Notification.Name("dev.notiapp.hook")
-let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notiapp/patterns.txt")
+let hookNote = Notification.Name("dev.perch.hook")
+let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/perch/patterns.txt")
 
-// Hook mode: Claude Code runs `NotiApp hook` with the event JSON on stdin.
+// Hook mode: Claude Code runs `Perch hook` with the event JSON on stdin.
 // We boil it down to a few strings, hand them to the running app and exit right away,
 // so Claude never waits on us and shows its own prompt as usual.
 if CommandLine.arguments.dropFirst().first == "hook" {
@@ -55,9 +55,9 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     exit(0)
 }
 
-// ~/Library/Logs/NotiApp.log, one line per card opened or closed and per answer sent, e.g.
+// ~/Library/Logs/Perch.log, one line per card opened or closed and per answer sent, e.g.
 //   2026-10-15T19:07:12Z answer 3B3A… pick(1) keys ["\u{1B}[B", "\r"] trusted card: false
-let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/NotiApp.log")
+let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Perch.log")
 func log(_ message: String) {
     let line = "\(Date().formatted(.iso8601)) \(message)\n"
     guard let h = try? FileHandle(forWritingTo: logURL) else {
@@ -111,6 +111,11 @@ final class App: NSObject, NSApplicationDelegate {
 
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
             try? FileManager.default.createDirectory(at: patternsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // bring your patterns along from when Perch was called NotiApp
+            let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notiapp/patterns.txt")
+            try? FileManager.default.moveItem(at: old, to: patternsFile)
+        }
+        if !FileManager.default.fileExists(atPath: patternsFile.path) {
             let header = "# One regex per line, matched against the last line of each iTerm2 tab.\n# It only fires if nothing was typed after the match.\n"
             try? (header + defaultPatterns.joined(separator: "\n") + "\n").write(to: patternsFile, atomically: true, encoding: .utf8)
         }
@@ -119,7 +124,7 @@ final class App: NSObject, NSApplicationDelegate {
         #if DEBUG
         // Test builds only (make debug): lets a script click cards. Never in a normal build, since any app
         // on the Mac could post this and type into your terminal.
-        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.notiapp.debug"), object: nil, queue: .main) { [weak self] n in
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.perch.debug"), object: nil, queue: .main) { [weak self] n in
             guard let self, let id = n.object as? String, let what = n.userInfo?["do"] as? String else { return }
             if self.cards[id] == nil { self.pick(id) }
             let parts = what.split(separator: ":", maxSplits: 1).map(String.init)
@@ -227,7 +232,7 @@ final class App: NSObject, NSApplicationDelegate {
         if dashboard.pausedUntil != nil, !dashboard.paused { dashboard.pausedUntil = nil } // the hour is up
         let waiting = dashboard.waiting
         let symbol = dashboard.paused || dashboard.accessDenied ? "bell.slash" : waiting > 0 ? "bell.fill" : "bell"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "NotiApp")?
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Perch")?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
         image?.isTemplate = true
         guard let button = statusItem.button else { return }
@@ -236,7 +241,7 @@ final class App: NSObject, NSApplicationDelegate {
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
             .baselineOffset: 0.5,
         ])
-        button.setAccessibilityLabel(waiting > 0 ? "NotiApp, \(waiting) waiting" : "NotiApp")
+        button.setAccessibilityLabel(waiting > 0 ? "Perch, \(waiting) waiting" : "Perch")
     }
 
     // The dashboard drops out of the notch, the same way cards do, and folds back in when you click away or press Esc

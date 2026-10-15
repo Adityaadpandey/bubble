@@ -26,7 +26,7 @@ struct Prompt: Equatable {
     var isMulti: Bool { rows.contains { $0.checked != nil } }
 }
 
-// Written to ~/.config/notiapp/patterns.txt on first launch, edit that file to teach it new CLIs
+// Written to ~/.config/perch/patterns.txt on first launch, edit that file to teach it new CLIs
 let defaultPatterns = [
     #"\[[yY]/[nN]\]"#,          // Overwrite? [y/N]
     #"\([yY]/[nN]\)"#,          // ? Continue (Y/n)

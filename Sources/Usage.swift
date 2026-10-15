@@ -113,8 +113,8 @@ enum UsageFetcher {
     }
 
     // Claude Code keeps its login in the Keychain under "Claude Code-credentials". macOS asks you once
-    // whether NotiApp may read it (Always Allow keeps it quiet). We only read it, never refresh it,
-    // because refreshing would sign Claude Code itself out. If you say no we stop asking until NotiApp restarts.
+    // whether Perch may read it (Always Allow keeps it quiet). We only read it, never refresh it,
+    // because refreshing would sign Claude Code itself out. If you say no we stop asking until Perch restarts.
     private static var claudeDenied = false
 
     private static func claudeToken(_ done: @escaping ((token: String, plan: String?)?) -> Void) {

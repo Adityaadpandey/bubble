@@ -37,7 +37,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if model.accessDenied {
                 Button(action: openSettings) {
-                    Label("Allow NotiApp to control iTerm2…", systemImage: "exclamationmark.triangle.fill")
+                    Label("Allow Perch to control iTerm2…", systemImage: "exclamationmark.triangle.fill")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain).foregroundStyle(.orange).padding(12)
@@ -84,7 +84,7 @@ struct DashboardView: View {
                 Menu {
                     Button("Edit prompt patterns…", action: editPatterns)
                     Divider()
-                    Button("Quit NotiApp") { NSApp.terminate(nil) }
+                    Button("Quit Perch") { NSApp.terminate(nil) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }

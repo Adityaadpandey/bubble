@@ -40,7 +40,7 @@ final class CardModel: ObservableObject {
 }
 
 // A see-through window that hangs from the notch, above the menu bar, every app and full screen spaces.
-// It never activates NotiApp, so whatever you were typing in keeps focus until you click into it.
+// It never activates Perch, so whatever you were typing in keeps focus until you click into it.
 class NotchPanel: NSPanel {
     var dismiss: (() -> Void)? // clicked away or pressed Esc, for windows that should just go away then
 
@@ -439,6 +439,7 @@ struct NotchShape: Shape {
     static let ear: CGFloat = 8
     var ears = true
     var radius: CGFloat
+    var earSize = Self.ear // bigger for the app icon, where 8 would be too small to see
 
     var animatableData: CGFloat {
         get { radius }
@@ -447,7 +448,7 @@ struct NotchShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         guard ears else { return Path(roundedRect: rect, cornerRadius: radius, style: .continuous) }
-        let (w, h, e) = (rect.width, rect.height, Self.ear)
+        let (w, h, e) = (rect.width, rect.height, earSize)
         let r = max(0, min(radius, (w - 2 * e) / 2, h - e))
         func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x, y: rect.minY + y) }
         var p = Path()
