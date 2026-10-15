@@ -9,7 +9,7 @@ final class Terminals {
     static let iTerm = "com.googlecode.iterm2", terminal = "com.apple.Terminal"
     static func app(of id: String) -> String { id.hasPrefix("/dev/") ? terminal : iTerm }
 
-    static let backends: [PaneBackend] = [TmuxBackend()]
+    static let backends: [PaneBackend] = [TmuxBackend(), KittyBackend()]
     static func backend(for id: String) -> PaneBackend? { backends.first { id.hasPrefix($0.prefix) } }
 
     // is the terminal showing this tab the app in front? A tmux pane could be in any terminal, so any known one will do.

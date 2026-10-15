@@ -95,3 +95,66 @@ struct TmuxBackend: PaneBackend {
         return text(run(exe, ["list-clients", "-F", "#{client_tty}"])).split(separator: "\n").map(String.init)
     }
 }
+
+// kitty's remote control, which needs this in kitty.conf (the number kitty adds to the socket name is its pid):
+//   allow_remote_control socket-only
+//   listen_on unix:/tmp/kitty
+// Ids look like "kitty:/tmp/kitty-4711#7", the socket and then kitty's window id. Text goes in on stdin,
+// where kitty sends it as is, so an escape key needs no escaping.
+struct KittyBackend: PaneBackend {
+    let prefix = "kitty:"
+    let bundle: String? = "net.kovidgoyal.kitty"
+    private let exe = firstExisting(["/Applications/kitty.app/Contents/MacOS/kitten", "/opt/homebrew/bin/kitten", "/usr/local/bin/kitten"])
+
+    // every kitty that's listening, e.g. ["/tmp/kitty-4711"]
+    private var sockets: [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: "/tmp")) ?? []
+        return names.filter { $0.hasPrefix("kitty") }.map { "/tmp/" + $0 }.filter {
+            (try? FileManager.default.attributesOfItem(atPath: $0)[.type] as? FileAttributeType) == .typeSocket
+        }
+    }
+
+    private func call(_ socket: String, _ args: [String], input: String? = nil) -> Data? {
+        exe.flatMap { run($0, ["@", "--to", "unix:" + socket] + args, input: input) }
+    }
+
+    // "/tmp/kitty-4711#7" is ("/tmp/kitty-4711", "7")
+    private func split(_ id: String) -> (socket: String, window: String) {
+        let rest = name(of: id)
+        guard let hash = rest.lastIndex(of: "#") else { return (rest, "") }
+        return (String(rest[..<hash]), String(rest[rest.index(after: hash)...]))
+    }
+
+    func list() -> (fronts: [String], sessions: [Session])? {
+        var fronts: [String] = [], sessions: [Session] = []
+        for socket in sockets {
+            guard let ls = call(socket, ["ls"]) else { continue } // a socket left behind by a kitty that's gone
+            for pane in parseKittyWindows(ls) {
+                let id = "\(prefix)\(socket)#\(pane.id)"
+                if pane.focused { fronts.append(id) }
+                sessions.append(Session(id: id, name: pane.name, tail: read(id), window: 0, tab: 0, pane: 0))
+            }
+        }
+        return (fronts, sessions)
+    }
+
+    func read(_ id: String) -> String {
+        let (socket, window) = split(id)
+        return screenTail(text(call(socket, ["get-text", "--match", "id:" + window])))
+    }
+
+    func send(_ id: String, _ keys: [String], gap: Double) -> Bool {
+        let (socket, window) = split(id)
+        for (i, key) in keys.enumerated() where !key.isEmpty {
+            if i > 0 { Thread.sleep(forTimeInterval: gap) }
+            guard call(socket, ["send-text", "--match", "id:" + window, "--stdin"], input: key) != nil else { return false }
+        }
+        return true
+    }
+
+    func focus(_ id: String) {
+        let (socket, window) = split(id)
+        _ = call(socket, ["focus-window", "--match", "id:" + window])
+        NSRunningApplication.runningApplications(withBundleIdentifier: "net.kovidgoyal.kitty").first?.activate()
+    }
+}
