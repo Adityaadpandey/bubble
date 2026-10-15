@@ -328,84 +328,116 @@ struct RowButton: View {
     }
 }
 
-// The look every notch window shares, cards and the dashboard alike. Docked, it's a notch-shaped
-// glass island, solid black where it meets the notch; otherwise a rounded glass card.
+// The look every notch window shares, cards and the dashboard alike: the notch's own black, so the
+// notch and the window read as one thing. The docked one is the notch grown bigger, flush with the top
+// of the screen with the same little inward curves at the top corners. The rest are black islands below it.
 //
-// It opens like the notch is stretching: it starts as a black pill exactly the notch's size,
-// springs out to full size, and the black melts into glass as the content fades in.
-// Setting `leaving` plays that backwards, so it tucks itself back into the notch.
+// Opening, the black shape starts folded up inside the notch (so you can't see it yet), springs out to
+// full size with a tiny bounce, and the content fades in a beat later once there's room for it.
+// Closing runs it backwards a little quicker: content out first, then the shape tucks back into the notch.
+//
+// Every frame is worked out from the clock (see `springOpen`) instead of stacking SwiftUI animations,
+// which drifted off centre and let text spill outside the shape halfway through.
 struct NotchChrome: ViewModifier {
     let docked: Bool
     let notch: CGSize
     let leaving: Bool
     var outline: Color? = nil
-    @State private var shown = false
-    @State private var size = CGSize(width: 380, height: 200)
+    @State private var openedAt = Date()
+    @State private var leftAt: Date?
+    @State private var size = CGSize.zero
+    @State private var settled = false // done opening, so stop redrawing every frame
 
-    private var open: Bool { shown && !leaving }
-    private var shape: AnyShape {
-        docked ? AnyShape(NotchShape(neck: notch)) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
+    // room around the shape for the spring's overshoot and the shadow, see-through so clicks pass
+    static let margin: CGFloat = 14
+
+    // folded up it fits just inside the notch; a screen without one gets a notch-sized starting point
+    private var folded: CGSize { CGSize(width: notch.width > 0 ? notch.width : 180, height: notch.height > 0 ? notch.height : 24) }
 
     func body(content: Content) -> some View {
-        content
-            .padding(.top, docked ? notch.height : 0)
-            .background { if docked { fade } }
-            .glassEffect(.regular.tint(.black.opacity(0.35)), in: shape)
-            .overlay { if let outline { shape.stroke(outline, lineWidth: 2) } }
-            .environment(\.colorScheme, .dark)
-            .overlay { shape.fill(.black).allowsHitTesting(false).opacity(open ? 0 : 1).animation(.easeOut(duration: 0.25).delay(open ? 0.12 : 0), value: open) }
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-            .scaleEffect(x: open ? 1 : min(max(notch.width, 180) / size.width, 1),
-                         y: open ? 1 : min(max(notch.height, 24) / size.height, 1), anchor: .top)
-            .onAppear { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { shown = true } }
-            .animation(.spring(duration: 0.22, bounce: 0), value: leaving)
+        TimelineView(.animation(paused: settled && leftAt == nil)) { ctx in
+            let opened = ctx.date.timeIntervalSince(openedAt)
+            let closing = leftAt.map { ctx.date.timeIntervalSince($0) }
+            // grow: 0 = folded in the notch, 1 = full size. reveal: how visible the content is.
+            let grow = closing.map { 1 - smooth($0 / 0.26) } ?? springOpen(opened)
+            let reveal = closing.map { 1 - smooth($0 / 0.1) } ?? smooth((opened - 0.1) / 0.25)
+            chrome(content, grow: size == .zero ? 0 : grow, reveal: reveal)
+        }
+        .padding([.horizontal, .bottom], Self.margin)
+        .onChange(of: leaving) { _, now in if now { leftAt = Date() } }
+        .task { try? await Task.sleep(for: .seconds(1.2)); settled = true }
     }
 
-    // so the notch looks like it stretched open rather than a window sitting under it
-    private var fade: some View {
-        VStack(spacing: 0) {
-            Color.black.frame(height: notch.height)
-            LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 36)
-            Spacer(minLength: 0)
-        }
-        .clipShape(NotchShape(neck: notch))
+    private func chrome(_ content: Content, grow: Double, reveal: Double) -> some View {
+        let w = folded.width + (max(size.width, folded.width) - folded.width) * grow
+        let h = folded.height + (max(size.height, folded.height) - folded.height) * grow
+        let shape = NotchShape(ears: docked, radius: 10 + 16 * min(grow, 1))
+        return content
+            .padding(.top, docked ? notch.height : 0)
+            .padding(.horizontal, docked ? NotchShape.ear : 0)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .environment(\.colorScheme, .dark)
+            .opacity(reveal)
+            .blur(radius: (1 - reveal) * 8)
+            .mask(alignment: .top) { shape.frame(width: w, height: h) } // text never shows outside the black
+            .background(alignment: .top) {
+                shape.fill(.black).frame(width: w, height: h)
+                    .shadow(color: .black.opacity(0.3 * min(grow, 1)), radius: 10, y: 4)
+            }
+            .overlay(alignment: .top) {
+                if let outline { shape.stroke(outline, lineWidth: 2).frame(width: w, height: h) }
+            }
     }
 }
 
-// The outline of a window hanging from the notch. Inside the menu bar it's exactly as wide as the
-// notch, so it just looks like the notch got longer, then it curves outward into the card below.
-// The menu bar either side stays as it was. Picture the notch pouring into the card:
+// A spring that settles in about half a second with a small overshoot (under 3%), the same feel as the
+// iPhone's Dynamic Island. At 0s it's 0, around 0.2s it passes 1 and peaks near 1.03, by 0.5s it's resting at 1.
+func springOpen(_ t: Double) -> Double {
+    guard t > 0 else { return 0 }
+    let damping = 0.75, w = 2 * Double.pi / 0.42
+    let wd = w * (1 - damping * damping).squareRoot()
+    return 1 - exp(-damping * w * t) * (cos(wd * t) + damping * w / wd * sin(wd * t))
+}
+
+// 0 to 1 with soft ends, anything outside 0...1 is held at the end
+func smooth(_ x: Double) -> Double {
+    let x = min(max(x, 0), 1)
+    return x * x * (3 - 2 * x)
+}
+
+// The notch's outline, stretched. Flush with the top of the screen, a small inward curve at each top
+// corner where it meets the menu bar (like the real notch), and rounded corners at the bottom.
 //
-//          │ notch │          <- inside the menu bar, black on black
-//     ╭────╯       ╰────╮     <- curves out just under the menu bar
-//     │                 │
-//     ╰─────────────────╯
+//   ‾╮                    ╭‾    <- top edge of the screen
+//    │                    │
+//    ╰────────────────────╯
+//
+// The bottom corners go from the notch's tight 10pt to a softer 26pt as it opens.
+// Without `ears` it's a plain rounded rectangle, for the cards lined up below the notch.
 struct NotchShape: Shape {
-    var neck: CGSize        // the notch it hangs from, e.g. 185 x 32
-    var radius: CGFloat = 22
-    private let flare: CGFloat = 10
+    static let ear: CGFloat = 8
+    var ears = true
+    var radius: CGFloat
+
+    var animatableData: CGFloat {
+        get { radius }
+        set { radius = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        let (w, h, r, top) = (rect.width, rect.height, radius, neck.height)
-        let f = min(flare, top)
-        let left = (w - neck.width) / 2, right = (w + neck.width) / 2
+        guard ears else { return Path(roundedRect: rect, cornerRadius: radius, style: .continuous) }
+        let (w, h, e) = (rect.width, rect.height, Self.ear)
+        let r = max(0, min(radius, (w - 2 * e) / 2, h - e))
         func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x, y: rect.minY + y) }
         var p = Path()
-        p.move(to: pt(left, 0))
-        p.addLine(to: pt(left, top - f))
-        p.addQuadCurve(to: pt(left - f, top), control: pt(left, top))
-        p.addLine(to: pt(r, top))
-        p.addQuadCurve(to: pt(0, top + r), control: pt(0, top))
-        p.addLine(to: pt(0, h - r))
-        p.addQuadCurve(to: pt(r, h), control: pt(0, h))
-        p.addLine(to: pt(w - r, h))
-        p.addQuadCurve(to: pt(w, h - r), control: pt(w, h))
-        p.addLine(to: pt(w, top + r))
-        p.addQuadCurve(to: pt(w - r, top), control: pt(w, top))
-        p.addLine(to: pt(right + f, top))
-        p.addQuadCurve(to: pt(right, top - f), control: pt(right, top))
-        p.addLine(to: pt(right, 0))
+        p.move(to: pt(0, 0))
+        p.addQuadCurve(to: pt(e, e), control: pt(e, 0))
+        p.addLine(to: pt(e, h - r))
+        p.addQuadCurve(to: pt(e + r, h), control: pt(e, h))
+        p.addLine(to: pt(w - e - r, h))
+        p.addQuadCurve(to: pt(w - e, h - r), control: pt(w - e, h))
+        p.addLine(to: pt(w - e, e))
+        p.addQuadCurve(to: pt(w, 0), control: pt(w - e, 0))
         p.closeSubpath()
         return p
     }

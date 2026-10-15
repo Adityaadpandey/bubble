@@ -262,7 +262,7 @@ final class App: NSObject, NSApplicationDelegate {
         dashPanel = nil
         dashClosedAt = Date()
         dashboard.leaving = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { panel.close() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() }
     }
 
     // usage loading in or a tab starting work changes its height, so this runs again after every dashboard update
@@ -379,7 +379,7 @@ final class App: NSObject, NSApplicationDelegate {
             if card.notch != notchSize { card.notch = notchSize }
             panel.fit()
             panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: top - panel.frame.height))
-            top -= panel.frame.height + 10
+            top -= panel.frame.height // each card already has a see-through margin below it
         }
     }
 
@@ -387,7 +387,7 @@ final class App: NSObject, NSApplicationDelegate {
         if cards[id] != nil { log("close \(id) \(why)") }
         cards.removeValue(forKey: id)?.leaving = true
         if let panel = panels.removeValue(forKey: id) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { panel.close() } // once it has folded away
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() } // once it has folded away
         }
         order.removeAll { $0 == id }
         relayout()
