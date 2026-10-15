@@ -158,3 +158,39 @@ struct KittyBackend: PaneBackend {
         NSRunningApplication.runningApplications(withBundleIdentifier: "net.kovidgoyal.kitty").first?.activate()
     }
 }
+
+// WezTerm's `wezterm cli`, which finds the running WezTerm by itself. Ids look like "wezterm:4", WezTerm's pane id.
+// Like kitty, text goes in on stdin, and --no-paste makes it typed keys rather than a bracketed paste.
+struct WezTermBackend: PaneBackend {
+    let prefix = "wezterm:"
+    let bundle: String? = "com.github.wez.wezterm"
+    private let exe = firstExisting(["/Applications/WezTerm.app/Contents/MacOS/wezterm", "/opt/homebrew/bin/wezterm", "/usr/local/bin/wezterm"])
+
+    private func cli(_ args: [String], input: String? = nil) -> Data? {
+        exe.flatMap { run($0, ["cli"] + args, input: input) }
+    }
+
+    func list() -> (fronts: [String], sessions: [Session])? {
+        guard let panes = cli(["list", "--format", "json"]) else { return nil }
+        let found = parseWezTermPanes(panes, clients: cli(["list-clients", "--format", "json"]))
+        return (found.filter(\.focused).map { prefix + $0.id },
+                found.map { Session(id: prefix + $0.id, name: $0.name, tail: read(prefix + $0.id), window: 0, tab: 0, pane: 0) })
+    }
+
+    func read(_ id: String) -> String {
+        screenTail(text(cli(["get-text", "--pane-id", name(of: id)])))
+    }
+
+    func send(_ id: String, _ keys: [String], gap: Double) -> Bool {
+        for (i, key) in keys.enumerated() where !key.isEmpty {
+            if i > 0 { Thread.sleep(forTimeInterval: gap) }
+            guard cli(["send-text", "--pane-id", name(of: id), "--no-paste"], input: key) != nil else { return false }
+        }
+        return true
+    }
+
+    func focus(_ id: String) {
+        _ = cli(["activate-pane", "--pane-id", name(of: id)])
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.github.wez.wezterm").first?.activate()
+    }
+}
