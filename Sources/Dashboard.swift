@@ -90,7 +90,7 @@ struct DashboardView: View {
             .font(.system(size: 12))
             .padding(10)
         }
-        .frame(width: 300)
+        .frame(width: 320)
     }
 }
 
@@ -120,20 +120,25 @@ struct TabRow: View {
     }
 }
 
-// "Codex" with one thin bar per window:  5h ▓▓▓░░░ 38%  resets 3h
+// "Codex  Go" with one thin bar per window:  5-hour ▓▓▓░░░ 38%  resets 3h
 struct UsageRow: View {
     let usage: Usage
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(usage.id).font(.system(size: 12, weight: .semibold))
+                if let plan = usage.plan {
+                    Text(plan).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
                 Spacer()
                 if let e = usage.error { Text(e).font(.system(size: 11)).foregroundStyle(.secondary) }
             }
             ForEach(usage.limits, id: \.label) { l in
                 HStack(spacing: 8) {
-                    Text(l.label).frame(width: 36, alignment: .leading).foregroundStyle(.secondary)
+                    Text(l.label).frame(width: 50, alignment: .leading).foregroundStyle(.secondary)
                     // drawn by hand, a ProgressView turns grey whenever the popover isn't the key window
                     Capsule().fill(Color.primary.opacity(0.1)).frame(height: 5).overlay(alignment: .leading) {
                         GeometryReader { g in
@@ -141,7 +146,7 @@ struct UsageRow: View {
                         }
                     }
                     Text("\(Int((l.used * 100).rounded()))%").monospacedDigit().frame(width: 34, alignment: .trailing)
-                    Text(l.resetsAt.map { "resets " + short($0) } ?? "").foregroundStyle(.tertiary).frame(width: 66, alignment: .leading)
+                    Text(l.resetsAt.map { "resets " + short($0) } ?? "").foregroundStyle(.tertiary).frame(width: 64, alignment: .leading)
                 }
                 .font(.system(size: 11))
                 .accessibilityElement(children: .combine)
@@ -152,6 +157,6 @@ struct UsageRow: View {
     // 45m, 5h, 3d
     private func short(_ d: Date) -> String {
         let s = max(0, d.timeIntervalSinceNow)
-        return s < 3600 ? "\(Int(s / 60))m" : s < 172800 ? "\(Int(s / 3600))h" : "\(Int(s / 86400))d"
+        return s < 3600 ? "\(Int((s / 60).rounded(.up)))m" : s < 172800 ? "\(Int((s / 3600).rounded(.up)))h" : "\(Int((s / 86400).rounded(.up)))d"
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
+import Security
 
-// One window of a plan's limit, e.g. "5h" at 38% that resets at 4:10 pm
+// One window of a plan's limit, e.g. "5-hour" at 38% that resets at 4:10 pm
 struct Limit: Equatable {
     let label: String
     let used: Double // 0...1
@@ -8,17 +9,32 @@ struct Limit: Equatable {
 }
 
 struct Usage: Identifiable, Equatable {
-    let id: String // "Codex", "Command Code"
+    let id: String // "Claude", "Codex", "Command Code"
+    var plan: String? // "Pro", "Go"
     var limits: [Limit] = []
     var error: String?
 }
 
-// "5h", "Week", "Month" from a window length, so every tool reads the same way
+// "5-hour", "Weekly", "Monthly" from a window length, so every tool reads the same way
 func windowLabel(seconds: Double) -> String {
     switch seconds {
-    case ..<(86400 - 1): return "\(Int((seconds / 3600).rounded()))h"
-    case ..<(8 * 86400): return "Week"
-    default: return "Month"
+    case ..<(86400 - 1): return "\(Int((seconds / 3600).rounded()))-hour"
+    case ..<(8 * 86400): return "Weekly"
+    default: return "Monthly"
+    }
+}
+
+// Claude, from api.anthropic.com/api/oauth/usage (the numbers behind /usage in Claude Code):
+//   {"five_hour": {"utilization": 12.0, "resets_at": "2026-10-15T18:00:00.123+00:00"}, "seven_day": {...}, "seven_day_opus": null}
+func parseClaude(_ data: Data) -> [Limit]? {
+    guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], obj["five_hour"] != nil else { return nil }
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let plain = ISO8601DateFormatter()
+    return [("five_hour", "5-hour"), ("seven_day", "Weekly"), ("seven_day_opus", "Opus"), ("seven_day_sonnet", "Sonnet")].compactMap { key, label in
+        guard let w = obj[key] as? [String: Any], let pct = (w["utilization"] as? NSNumber)?.doubleValue else { return nil }
+        let at = (w["resets_at"] as? String).flatMap { iso.date(from: $0) ?? plain.date(from: $0) }
+        return Limit(label: label, used: min(pct / 100, 1), resetsAt: at)
     }
 }
 
@@ -39,7 +55,7 @@ func parseCodex(_ data: Data) -> [Limit]? {
 func parseCommandCode(_ data: Data) -> [Limit]? {
     guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let windows = obj["windowLimits"] as? [String: Any] else { return nil }
-    return [("fiveHour", "5h"), ("weekly", "Week")].compactMap { key, label in
+    return [("fiveHour", "5-hour"), ("weekly", "Weekly")].compactMap { key, label in
         guard let w = windows[key] as? [String: Any],
               let used = (w["used"] as? NSNumber)?.doubleValue, let cap = (w["cap"] as? NSNumber)?.doubleValue, cap > 0 else { return nil }
         let ms = (w["resetAt"] as? NSNumber)?.doubleValue ?? 0
@@ -58,32 +74,61 @@ enum UsageFetcher {
         let lock = NSLock()
         func add(_ u: Usage) { lock.lock(); results[u.id] = u; lock.unlock(); group.leave() }
 
+        group.enter()
+        claudeToken { login in
+            guard let login else { return add(Usage(id: "Claude", error: claudeDenied ? "Keychain access was denied" : "Sign in to Claude Code")) }
+            var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+            req.setValue("Bearer \(login.token)", forHTTPHeaderField: "Authorization")
+            req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+            get(req, name: "Claude", plan: login.plan, signIn: "Open Claude Code to sign in again", parse: parseClaude, add)
+        }
         if let auth = json("~/.codex/auth.json"), let tokens = auth["tokens"] as? [String: Any],
            let token = tokens["access_token"] as? String {
             group.enter()
             var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             if let account = tokens["account_id"] as? String { req.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
-            get(req, name: "Codex", signIn: "Open Codex to sign in again", parse: parseCodex, add)
+            get(req, name: "Codex", plan: nil, signIn: "Open Codex to sign in again", parse: parseCodex, add)
         }
         if let auth = json("~/.commandcode/auth.json"), let key = auth["apiKey"] as? String {
             group.enter()
             var req = URLRequest(url: URL(string: "https://api.commandcode.ai/alpha/billing/credits")!)
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            get(req, name: "Command Code", signIn: "Run commandcode login", parse: parseCommandCode, add)
+            get(req, name: "Command Code", plan: nil, signIn: "Run commandcode login", parse: parseCommandCode, add)
         }
         group.notify(queue: .main) { done(results.values.sorted { $0.id < $1.id }) }
     }
 
-    private static func get(_ req: URLRequest, name: String, signIn: String, parse: @escaping (Data) -> [Limit]?, _ add: @escaping (Usage) -> Void) {
+    private static func get(_ req: URLRequest, name: String, plan: String?, signIn: String, parse: @escaping (Data) -> [Limit]?, _ add: @escaping (Usage) -> Void) {
         var req = req
         req.timeoutInterval = 15
         URLSession.shared.dataTask(with: req) { data, resp, _ in
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if status == 401 || status == 403 { return add(Usage(id: name, error: signIn)) }
-            guard status == 200, let data, let limits = parse(data) else { return add(Usage(id: name, error: "Couldn't load usage")) }
-            add(Usage(id: name, limits: limits))
+            if status == 401 || status == 403 { return add(Usage(id: name, plan: plan, error: signIn)) }
+            guard status == 200, let data, let limits = parse(data) else { return add(Usage(id: name, plan: plan, error: "Couldn't load usage")) }
+            // Codex and Command Code say their plan in the same reply
+            let obj = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            add(Usage(id: name, plan: plan ?? (obj?["plan_type"] as? String)?.capitalized, limits: limits))
         }.resume()
+    }
+
+    // Claude Code keeps its login in the Keychain under "Claude Code-credentials". macOS asks you once
+    // whether NotiApp may read it (Always Allow keeps it quiet). We only read it, never refresh it,
+    // because refreshing would sign Claude Code itself out. If you say no we stop asking until NotiApp restarts.
+    private static var claudeDenied = false
+
+    private static func claudeToken(_ done: @escaping ((token: String, plan: String?)?) -> Void) {
+        guard !claudeDenied else { return done(nil) }
+        DispatchQueue.global().async {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Claude Code-credentials",
+                                        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+            var out: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &out)
+            if status == errSecAuthFailed || status == errSecUserCanceled || status == errSecInteractionNotAllowed { claudeDenied = true }
+            let oauth = (out as? Data).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["claudeAiOauth"] as? [String: Any]
+            let login = (oauth?["accessToken"] as? String).map { ($0, (oauth?["subscriptionType"] as? String)?.capitalized) }
+            done(login)
+        }
     }
 
     private static func json(_ path: String) -> [String: Any]? {

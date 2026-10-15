@@ -112,10 +112,13 @@ import Foundation
 
         // usage limits, from responses shaped like the real ones
         let codex = parseCodex(#"{"rate_limit":{"primary_window":{"used_percent":38,"limit_window_seconds":18000,"reset_at":1786340818},"secondary_window":{"used_percent":5,"limit_window_seconds":604800,"reset_at":1786900000}}}"#.data(using: .utf8)!)!
-        precondition(codex.map(\.label) == ["5h", "Week"] && codex[0].used == 0.38 && codex[0].resetsAt == Date(timeIntervalSince1970: 1786340818))
-        precondition(parseCodex(#"{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":2592000,"reset_at":1}}}"#.data(using: .utf8)!)!.first?.label == "Month")
+        precondition(codex.map(\.label) == ["5-hour", "Weekly"] && codex[0].used == 0.38 && codex[0].resetsAt == Date(timeIntervalSince1970: 1786340818))
+        precondition(parseCodex(#"{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":2592000,"reset_at":1}}}"#.data(using: .utf8)!)!.first?.label == "Monthly")
         let cc = parseCommandCode(#"{"windowLimits":{"fiveHour":{"used":0,"cap":14,"resetAt":0},"weekly":{"used":31.5,"cap":35,"resetAt":1792105359547}}}"#.data(using: .utf8)!)!
-        precondition(cc.map(\.label) == ["5h", "Week"] && cc[0].resetsAt == nil && cc[1].used == 0.9)
+        precondition(cc.map(\.label) == ["5-hour", "Weekly"] && cc[0].resetsAt == nil && cc[1].used == 0.9)
+        let claude = parseClaude(#"{"five_hour":{"utilization":12.0,"resets_at":"2026-10-15T18:00:00.123+00:00"},"seven_day":{"utilization":40,"resets_at":"2026-10-20T09:00:00+00:00"},"seven_day_opus":null}"#.data(using: .utf8)!)!
+        precondition(claude.map(\.label) == ["5-hour", "Weekly"] && claude[0].used == 0.12 && claude[1].resetsAt == Date(timeIntervalSince1970: 1792486800))
+        precondition(claude[0].resetsAt != nil && parseClaude(Data("{}".utf8)) == nil)
         precondition(parseCodex(Data("{}".utf8)) == nil && parseCommandCode(Data("not json".utf8)) == nil)
 
         print("all checks passed")
