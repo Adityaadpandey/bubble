@@ -126,6 +126,10 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // quiet hours can run past midnight; the same start and end means there are none
+        precondition([23, 0, 7].allSatisfy { isQuiet(hour: $0, from: 22, to: 8) } && ![8, 12, 21].contains { isQuiet(hour: $0, from: 22, to: 8) })
+        precondition(isQuiet(hour: 9, from: 9, to: 17) && !isQuiet(hour: 17, from: 9, to: 17) && !isQuiet(hour: 5, from: 6, to: 6))
+
         // history: decisions get a name, ticking one box of several doesn't, and a typed reply is never quoted
         let hp = Prompt(kind: .menu, line: "Do you want to proceed?", rows: [Row(label: "Yes", number: 1), Row(label: "No", number: 2)])
         precondition(answerLabel(.pick(1), in: hp) == "No" && answerLabel(.yes, in: hp) == "Yes" && answerLabel(.nextTab, in: hp) == nil)

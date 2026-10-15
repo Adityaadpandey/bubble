@@ -7,6 +7,7 @@ enum Prefs {
     static let defaults: [String: Any] = [
         "nudgeSeconds": 120,     // how long a prompt waits before the second ping, 0 = never
         "sound": "Glass",        // a macOS system sound by name, "" = silent
+        "quiet.on": false, "quiet.from": 22, "quiet.to": 8, // no chime between these hours
         "shortcut": "ctrlOptSpace",
         "watch.iterm": true, "watch.terminal": true, "watch.tmux": true, "watch.kitty": true, "watch.wezterm": true,
         "meter.Claude": true, "meter.Codex": true, "meter.Command Code": true,
@@ -21,11 +22,19 @@ enum Prefs {
     // the chime when a card opens and for the second ping, unless you picked silence
     static func chime() {
         let name = string("sound")
+        let hour = Calendar.current.component(.hour, from: Date())
+        if bool("quiet.on"), isQuiet(hour: hour, from: int("quiet.from"), to: int("quiet.to")) { return }
         if !name.isEmpty { NSSound(named: name)?.play() }
     }
 
     // the pieces of Settings that need something redone when they change (the hotkey, the usage meters)
     static var watchedChoices: String { ["shortcut", "meter.Claude", "meter.Codex", "meter.Command Code"].map { "\($0)=\(string($0))\(bool($0))" }.joined() }
+}
+
+/// Is `hour` inside quiet hours, which may run past midnight? 22 to 8 covers 23, 0 and 7 but not 8 or 12, and 9 to 17 is a work day.
+func isQuiet(hour: Int, from: Int, to: Int) -> Bool {
+    if from == to { return false }
+    return from < to ? (from..<to).contains(hour) : hour >= from || hour < to
 }
 
 // How cards and the dashboard look. The "comfortable", "normal" names are what the Settings pickers store.

@@ -6,6 +6,9 @@ struct SettingsView: View {
     @AppStorage("nudgeSeconds") private var nudge = 120
     @AppStorage("sound") private var sound = "Glass"
     @AppStorage("shortcut") private var shortcut = "ctrlOptSpace"
+    @AppStorage("quiet.on") private var quietOn = false
+    @AppStorage("quiet.from") private var quietFrom = 22
+    @AppStorage("quiet.to") private var quietTo = 8
     @AppStorage("spacing") private var spacing = "comfortable"
     @AppStorage("accent") private var accent = "system"
     @AppStorage("width") private var width = "normal"
@@ -41,6 +44,18 @@ struct SettingsView: View {
                     ForEach(Shortcut.choices, id: \.id) { Text($0.label).tag($0.id) }
                     Text("Off").tag("off")
                 }
+            }
+
+            Section {
+                Toggle("Mute the sound at night", isOn: $quietOn)
+                if quietOn {
+                    Picker("From", selection: $quietFrom) { ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                    Picker("Until", selection: $quietTo) { ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                }
+            } header: {
+                Text("Quiet hours")
+            } footer: {
+                Text("Cards still appear, they just arrive without the sound.")
             }
 
             Section {
