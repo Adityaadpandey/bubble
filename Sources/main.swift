@@ -175,9 +175,10 @@ final class App: NSObject, NSApplicationDelegate {
             if let a { self.answer(id, a) }
         }
         #endif
-        // set up before onboarding existed, so there's nothing to walk them through
+        // Decided once, on the first launch of this version: already set up before onboarding existed means
+        // nothing to walk you through. A brand new install stores false, so quitting halfway shows it again next time.
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: "setUpLogin") { defaults.set(true, forKey: "onboarded") }
+        if defaults.object(forKey: "onboarded") == nil { defaults.set(defaults.bool(forKey: "setUpLogin"), forKey: "onboarded") }
         // start at login the first time; after that the "Open at Login" switch in the ⋯ menu decides
         if !UserDefaults.standard.bool(forKey: "setUpLogin") {
             try? SMAppService.mainApp.register()
