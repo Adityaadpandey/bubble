@@ -351,6 +351,7 @@ final class App: NSObject, NSApplicationDelegate {
             showSettings: { [weak self] in self?.hideDashboard(); self?.showSettings() },
             openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() },
             connectClaude: { [weak self] in self?.connectClaude() },
+            disconnectClaude: { [weak self] in self?.disconnectClaude() },
             welcome: { [weak self] in self?.hideDashboard(); self?.showWelcome() }))
         host.sizingOptions = [.intrinsicContentSize] // still reports its size, but leaves placing the window to us, pinned to the top of the screen
         let panel = NotchPanel(host, raised: 4) // above any card sitting in the notch
@@ -719,6 +720,17 @@ final class App: NSObject, NSApplicationDelegate {
             NSSound.beep()
         }
         dashboard.claudeConnected = ClaudeHooks.connected()
+    }
+
+    func disconnectClaude() {
+        do {
+            try ClaudeHooks.disconnect()
+            log("disconnected Claude Code hooks")
+        } catch {
+            log("couldn't disconnect Claude Code hooks: \(error)")
+            NSSound.beep()
+        }
+        dashboard.claudeConnected = ClaudeHooks.connected() || !ClaudeHooks.claudeInstalled
     }
 
     func editPatterns() {

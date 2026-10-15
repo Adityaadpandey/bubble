@@ -33,6 +33,7 @@ struct DashboardView: View {
     let showSettings: () -> Void
     let openSettings: () -> Void
     let connectClaude: () -> Void
+    let disconnectClaude: () -> Void
     let welcome: () -> Void
 
     // idle tabs are just noise here, only show the ones that need you or are busy
@@ -102,6 +103,7 @@ struct DashboardView: View {
                     Button("Settings…", action: showSettings)
                     Button("Edit prompt patterns…", action: editPatterns)
                     if !model.claudeConnected { Button("Connect Claude Code", action: connectClaude) }
+                    else if ClaudeHooks.added { Button("Disconnect Claude Code", action: disconnectClaude) }
                     Toggle("Open at Login", isOn: Binding(
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))

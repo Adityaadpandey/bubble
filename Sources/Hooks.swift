@@ -59,6 +59,28 @@ enum ClaudeHooks {
         try out.write(to: settings, options: .atomic)
     }
 
+    // Takes Notchy's hooks back out and leaves everyone else's, so uninstalling needs no hand editing.
+    // An event that only had Notchy's hook disappears, and so does "hooks" if that leaves it empty.
+    static func disconnect(_ settings: URL = settings) throws {
+        guard let data = try? Data(contentsOf: settings) else { return }
+        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CocoaError(.fileReadCorruptFile) }
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        for event in hooks.keys {
+            let groups = (hooks[event] as? [[String: Any]] ?? []).compactMap { group -> [String: Any]? in
+                let all = group["hooks"] as? [[String: Any]] ?? []
+                let kept = all.filter { !isNotchy($0["command"] as? String ?? "") }
+                if kept.isEmpty && !all.isEmpty { return nil }
+                var group = group
+                group["hooks"] = kept
+                return group
+            }
+            hooks[event] = groups.isEmpty ? nil : groups
+        }
+        root["hooks"] = hooks.isEmpty ? nil : hooks
+        try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            .write(to: settings, options: .atomic)
+    }
+
     private static func isNotchy(_ command: String) -> Bool {
         command == Self.command || command.hasSuffix(" hook") && ["/Notchy", "/Perch", "/NotiApp"].contains(where: command.contains)
     }

@@ -188,6 +188,12 @@ import Foundation
         precondition(notify == ["/x/cc-status", ClaudeHooks.command], "\(notify)")
         precondition(hooks["PermissionRequest"]!.count == 1 && saved["model"] as? String == "opus" && ClaudeHooks.connected(file))
         precondition(FileManager.default.fileExists(atPath: file.appendingPathExtension("before-notchy").path))
+        // disconnecting takes only Notchy's hooks out: the other tool's stays, and an event that was only Notchy's goes
+        try! ClaudeHooks.disconnect(file)
+        let after = try! JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let left = after["hooks"] as! [String: [[String: Any]]]
+        precondition(left["PermissionRequest"] == nil && !ClaudeHooks.connected(file) && after["model"] as? String == "opus")
+        precondition(left["Notification"]!.flatMap { $0["hooks"] as! [[String: String]] }.map { $0["command"]! } == ["/x/cc-status"])
         // a settings file that isn't valid JSON is never overwritten
         try! Data("{ oops".utf8).write(to: file)
         precondition((try? ClaudeHooks.connect(file)) == nil && String(data: try! Data(contentsOf: file), encoding: .utf8) == "{ oops")
