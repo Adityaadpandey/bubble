@@ -95,6 +95,15 @@ import Foundation
         precondition(keys(for: .pick(0), in: box).keys == ["\u{1b}[A", " "])
         precondition(keys(for: .submit, in: box).keys == ["\r"])
 
+        // Terminal.app: one line, then Terminal presses Enter. Claude rows go by number, never an arrow walk.
+        precondition(terminalLine(for: .pick(0), in: perm) == "")
+        precondition(terminalLine(for: .pick(2), in: perm) == "3")
+        precondition(terminalLine(for: .yes, in: yn) == "y" && terminalLine(for: .reply("maybe"), in: yn) == "maybe")
+        precondition(terminalLine(for: .pick(2), in: inq) == "\u{1b}[B\u{1b}[B")
+        // these need a key without Enter after it, or the Enter would answer the next question as well
+        precondition(terminalLine(for: .pick(0), in: box) == nil && terminalLine(for: .nextTab, in: m) == nil)
+        precondition(terminalLine(for: .pick(1), in: m) == nil && terminalLine(for: .reply("no"), in: perm) == nil)
+
         // free-text questions only count once the screen has been still for a few seconds
         let name = "? Project name: (my-app) "
         precondition(detectPrompt(screen: name, patterns: pats, quietFor: 1) == nil)

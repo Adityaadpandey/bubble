@@ -206,6 +206,26 @@ func keys(for a: Answer, in p: Prompt) -> (keys: [String], gap: Double) {
     }
 }
 
+/// The same answer for a Terminal.app tab, which can only type one line and then press Enter (its `do script`).
+/// So it goes as a single line, e.g. "y" for a yes, or "3" to pick row 3 of a Claude menu outright,
+/// and Terminal adds the Enter. Nil when it needs a key with no Enter after it (Space to tick a box,
+/// ← → between questions), since there's no way to send that.
+func terminalLine(for a: Answer, in p: Prompt) -> String? {
+    switch a {
+    case .pick(let i) where i == p.cursor && !(p.kind == .list && p.isMulti): return ""
+    // Claude menus jump straight to a row by its number. Not on multi-question ones, where the number
+    // already moves on to the next question and Terminal's Enter would answer that one too.
+    case .pick(let i) where p.kind == .menu: return p.tabs.isEmpty && !p.isMulti ? p.rows[i].number.map(String.init) : nil
+    // other CLIs read a burst of keys one key at a time (Node's readline does), so ↓ ↓ then Enter is fine
+    case .pick where !p.isMulti: return keys(for: a, in: p).keys.dropLast().joined()
+    case .submit: return ""
+    case .yes: return "y"
+    case .no: return "n"
+    case .reply(let text) where p.kind != .menu: return text
+    default: return nil
+    }
+}
+
 func loadPatterns(_ text: String) -> [NSRegularExpression] {
     text.components(separatedBy: .newlines)
         .map { $0.trimmingCharacters(in: .whitespaces) }
