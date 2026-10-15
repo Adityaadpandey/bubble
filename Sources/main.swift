@@ -63,6 +63,7 @@ final class App: NSObject, NSApplicationDelegate {
     var order: [String] = []                  // oldest card on top, newer ones stack below it
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
+    var changed: [String: (tail: String, at: Date)] = [:] // when each tab's screen last changed
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -103,7 +104,9 @@ final class App: NSObject, NSApplicationDelegate {
         var tabs: [TabStatus] = []
 
         for s in sessions {
-            let found = detectPrompt(screen: s.tail, patterns: patterns)
+            if changed[s.id]?.tail != s.tail { changed[s.id] = (s.tail, Date()) }
+            let quiet = Date().timeIntervalSince(changed[s.id]!.at)
+            let found = detectPrompt(screen: s.tail, patterns: patterns, quietFor: quiet)
             if let p = found ?? cards[s.id]?.prompt {
                 tabs.append(TabStatus(id: s.id, name: s.name, state: .waiting, note: p.line.isEmpty ? "Waiting for you" : p.line))
             } else if let busy = claudeActivity(s.tail) {
@@ -166,7 +169,7 @@ final class App: NSObject, NSApplicationDelegate {
     // A row in the dashboard: answer it on its card if it's waiting, otherwise jump to the tab
     func pick(_ id: String) {
         if cards[id] == nil, let s = readSessions()?.1.first(where: { $0.id == id }),
-           let found = detectPrompt(screen: s.tail, patterns: patterns) {
+           let found = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity) {
             hidden.remove(id)
             open(s, found, detail: details.removeValue(forKey: id))
         }
@@ -277,7 +280,7 @@ final class App: NSObject, NSApplicationDelegate {
     func answer(_ id: String, _ a: Answer) {
         guard let card = cards[id], let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
         // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-        let now = detectPrompt(screen: s.tail, patterns: patterns)
+        let now = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity)
         if card.prompt.kind == .idle {
             guard s.tail == card.snapshot else { return close(id) }
         } else {

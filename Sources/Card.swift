@@ -72,13 +72,13 @@ struct CardView: View {
     @FocusState private var cardFocused: Bool
 
     private var p: Prompt { model.prompt }
-    private var isClaude: Bool { p.kind != .yesNo }
+    private var isClaude: Bool { p.kind == .menu || p.kind == .idle }
     // Claude's own "Type something" and "Chat about this" rows are what the reply box is for,
     // and unnumbered rows like "Next" get their own button below the choices
     private var visibleRows: [Int] {
         p.rows.indices.filter {
             let r = p.rows[$0]
-            return (r.number != nil || p.kind == .yesNo) && !r.label.hasPrefix("Type something") && r.label != "Chat about this"
+            return (r.number != nil || p.kind != .menu) && !r.label.hasPrefix("Type something") && r.label != "Chat about this"
         }
     }
     private var navRows: [Int] { p.kind == .menu ? p.rows.indices.filter { p.rows[$0].number == nil } : [] }
@@ -98,6 +98,12 @@ struct CardView: View {
                                   showKey: model.keyboard, destructive: isNo(p.rows[i])) { pick(i) }
                     }
                 }
+            }
+            if p.kind == .list && p.isMulti {
+                Button { act(.answer(.submit)) } label: {
+                    Label("Submit", systemImage: "checkmark").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large)
             }
             ForEach(navRows, id: \.self) { i in
                 Button { pick(i) } label: {
@@ -135,6 +141,8 @@ struct CardView: View {
         case .tab: replyFocused = true
         case .leftArrow where !p.tabs.isEmpty: act(.answer(.prevTab))
         case .rightArrow where !p.tabs.isEmpty: act(.answer(.nextTab))
+        case .return where p.kind == .list && p.isMulti: act(.answer(.submit))
+        case .return where p.kind == .text: replyFocused = true
         case .return: pick(navRows.first ?? p.cursor)
         default:
             let c = press.characters.lowercased()
@@ -177,6 +185,8 @@ struct CardView: View {
         switch p.kind {
         case .idle: return "Waiting for your next message"
         case .yesNo: return "Asking yes or no"
+        case .text: return "Asking for an answer"
+        case .list: return p.isMulti ? "Pick one or more" : "Pick one"
         case .menu where p.isMulti: return "Pick one or more"
         case .menu where model.detail != nil || p.line.hasPrefix("Do you want"): return "Needs your permission"
         case .menu: return "Asking a question"
@@ -227,7 +237,7 @@ struct CardView: View {
 
     private var replyBox: some View {
         HStack(spacing: 8) {
-            TextField(isClaude ? "Reply to Claude…" : "Type an answer…", text: $reply)
+            TextField(isClaude ? "Reply to Claude…" : p.kind == .list ? "Type to filter or answer…" : "Type an answer…", text: $reply)
                 .textFieldStyle(.plain)
                 .focused($replyFocused)
                 .onSubmit(send)

@@ -76,6 +76,35 @@ import Foundation
         let yn = d("Overwrite? [y/N]")!
         precondition(keys(for: .yes, in: yn).keys == ["y\r"] && keys(for: .reply("maybe"), in: yn).keys == ["maybe\r"])
 
+        // generic CLI lists: inquirer select, inquirer checkbox, clack select, prompts select
+        let inq = d("? Which framework? (Use arrow keys)\n❯ React\n  Vue\n  Svelte\n")!
+        precondition(inq.kind == .list && inq.line == "Which framework?" && inq.rows.map(\.label) == ["React", "Vue", "Svelte"] && inq.cursor == 0)
+        let box = d("? Pick toppings (Press <space> to select, <a> to toggle all)\n ◉ Cheese\n❯◯ Ham\n ◯ Olives")!
+        precondition(box.kind == .list && box.isMulti && box.cursor == 1 && box.rows.map(\.checked) == [true, false, false])
+        precondition(box.rows.map(\.label) == ["Cheese", "Ham", "Olives"] && box.line == "Pick toppings")
+        let clack = d("┌  create-app\n│\n◆  Pick a project type.\n│  ○ JavaScript\n│  ● TypeScript\n└\n")!
+        precondition(clack.kind == .list && clack.cursor == 1 && !clack.isMulti && clack.line == "Pick a project type.")
+        let prm = d("? Pick a color › - Use arrow-keys. Return to submit.\n❯   Red\n    Green\n    Blue")!
+        precondition(prm.line == "Pick a color" && prm.rows.count == 3)
+        // a shell prompt with a command typed into it, or quoted text, is not a list
+        precondition(d("~/proj on main\n❯ npm run build\n") == nil)
+        precondition(d("Notes:\n> first quote\n  continued") == nil)
+
+        // answering lists: Enter picks, Space toggles a checkbox, Enter submits
+        precondition(keys(for: .pick(2), in: inq).keys == ["\u{1b}[B", "\u{1b}[B", "\r"])
+        precondition(keys(for: .pick(0), in: box).keys == ["\u{1b}[A", " "])
+        precondition(keys(for: .submit, in: box).keys == ["\r"])
+
+        // free-text questions only count once the screen has been still for a few seconds
+        let name = "? Project name: (my-app) "
+        precondition(detectPrompt(screen: name, patterns: pats, quietFor: 1) == nil)
+        precondition(detectPrompt(screen: name, patterns: pats, quietFor: 5)?.kind == .text)
+        precondition(detectPrompt(screen: "Enter the API base URL:", patterns: pats, quietFor: 5)?.line == "Enter the API base URL:")
+        precondition(detectPrompt(screen: "Running tests:", patterns: pats, quietFor: 5) == nil, "a label, not a question")
+        precondition(detectPrompt(screen: "Enter your password:", patterns: pats, quietFor: 5) == nil)
+        precondition(detectPrompt(screen: "aditya@mac notiapp % ", patterns: pats, quietFor: 60) == nil)
+        precondition(keys(for: .reply("my-app"), in: detectPrompt(screen: name, patterns: pats, quietFor: 5)!).keys == ["my-app\r"])
+
         // dashboard status from Claude's spinner
         precondition(claudeActivity("⏺ done\n✽ Cerebrating… (39s · ↓ 3.1k tokens)\n───\n❯ \n") == "Cerebrating… 39s")
         precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")

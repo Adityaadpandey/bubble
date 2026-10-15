@@ -1,6 +1,7 @@
 import Foundation
 
-enum PromptKind: String { case menu, yesNo, idle }
+// menu: Claude's numbered menus, list: other CLIs' arrow-key lists, text: a CLI asking for typed input
+enum PromptKind: String { case menu, list, yesNo, text, idle }
 
 struct Row: Equatable {
     let label: String
@@ -45,15 +46,19 @@ private let trimSet = CharacterSet.whitespaces.union(CharacterSet(charactersIn: 
 ///     ❯ 1. [✔] Confirmation toast
 ///       2. [ ] Re-ping if ignored
 ///          Next
-/// Everything else only counts on the very last line, and only if nothing was typed after it,
+/// Arrow-key lists from other CLIs (inquirer, clack, prompts) are found by their cursor row, see `cliList`.
+/// Yes/no only counts on the very last line, and only if nothing was typed after it,
 /// so "Overwrite? [y/N]" fires but an already answered "Overwrite? [y/N] y" does not.
-func detectPrompt(screen: String, patterns: [NSRegularExpression]) -> Prompt? {
+/// Free-text questions ("? Project name:", "Enter the API URL:") need the screen to have sat still
+/// for `quietFor` seconds, since a line ending in ":" could just be output still on its way.
+func detectPrompt(screen: String, patterns: [NSRegularExpression], quietFor: TimeInterval = 0) -> Prompt? {
     let raw = screen.components(separatedBy: .newlines)
     // a line made only of ─ is a divider, kept as "" so context stops there
     let all = raw.map { $0.contains("──") && $0.trimmingCharacters(in: trimSet).isEmpty ? "" : $0.trimmingCharacters(in: trimSet) }
     let lines = all.enumerated().filter { !$0.element.isEmpty || raw[$0.offset].contains("──") }.map(\.element)
 
     if let menu = claudeMenu(Array(lines.suffix(40))) { return menu }
+    if let list = cliList(raw) { return list }
 
     guard let last = lines.last(where: { !$0.isEmpty }) else { return nil }
     // Never push password prompts onto the screen
@@ -67,7 +72,63 @@ func detectPrompt(screen: String, patterns: [NSRegularExpression]) -> Prompt? {
             return Prompt(kind: .yesNo, line: last, rows: [Row(label: "Yes"), Row(label: "No")])
         }
     }
+
+    let asks = last.hasPrefix("? ") || last.hasSuffix("?")
+        || (last.hasSuffix(":") && last.range(of: #"\b(enter|type|name|value|choose|select|input|provide|specify|what|which)\b"#,
+                                             options: [.regularExpression, .caseInsensitive]) != nil)
+    if quietFor >= 3, asks {
+        return Prompt(kind: .text, line: last.hasPrefix("? ") ? String(last.dropFirst(2)) : last)
+    }
     return nil
+}
+
+/// Arrow-key lists other CLIs draw, found by the cursor row and the rows lined up with it:
+///     ? Which framework? (Use arrow keys)       ◆  Pick a project type.       ? Pick toppings
+///     ❯ React                                   │  ○ JavaScript               ◉ Cheese
+///       Vue                                     │  ● TypeScript              ❯◯ Ham
+/// The line above the rows has to read like a question, so quoted "> text" in some output doesn't count.
+private func cliList(_ raw: [String]) -> Prompt? {
+    // clack draws a │ rail down the left, blank it so the columns still line up
+    var tail = raw.suffix(25).map { String($0.replacingOccurrences(of: "│", with: " ").reversed().drop { $0 == " " }.reversed()) }
+    while let l = tail.last, l.trimmingCharacters(in: .whitespaces).isEmpty || l.trimmingCharacters(in: .whitespaces) == "└" {
+        tail.removeLast()
+    }
+    guard let c = tail.lastIndex(where: { $0.firstMatch(of: #/^\s*([❯›>]|●\s)/#) != nil }), c >= tail.count - 4 else { return nil }
+
+    // where the option text starts on the cursor row, the other rows start in the same column
+    let cur = Array(tail[c])
+    var col = cur.firstIndex { $0 != " " }!
+    if cur[col] != "●" {
+        col += 1
+        while col < cur.count, cur[col] == " " { col += 1 }
+    }
+    guard col < cur.count else { return nil }
+    let symbols = Set("◯◉○●◻◼☐☑✔✓[(")
+    func isRow(_ i: Int) -> Bool {
+        if i == c { return true }
+        let l = Array(tail[i])
+        guard l.count > col, l[..<col].allSatisfy({ $0 == " " }), l[col] != " " else { return false }
+        return !symbols.contains(cur[col]) || symbols.contains(l[col])
+    }
+    var lo = c, hi = c
+    while lo > 0, isRow(lo - 1) { lo -= 1 }
+    while hi < tail.count - 1, isRow(hi + 1) { hi += 1 }
+    guard hi > lo, lo > 0 else { return nil }
+
+    var question = tail[lo - 1].trimmingCharacters(in: .whitespaces)
+    guard question.range(of: #"^[?◆◇]|›|\?$|\?\s*\(|select|choose|pick"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+    // "? Which framework? (Use arrow keys)" reads as "Which framework?"
+    question = question.replacingOccurrences(of: #"^[?◆◇]\s*"#, with: "", options: .regularExpression)
+    question = question.replacingOccurrences(of: #"\s+(›.*|\(.*)$"#, with: "", options: .regularExpression)
+
+    let rows = (lo...hi).map { i -> Row in
+        let text = String(Array(tail[i])[col...]).trimmingCharacters(in: .whitespaces)
+        if let m = text.wholeMatch(of: #/(?:[◉◼☑✔✓]|\[[xX✔]\]|\(\*\))\s*(.+)/#) { return Row(label: String(m.1), checked: true) }
+        if let m = text.wholeMatch(of: #/(?:[◯◻☐]|\[ \]|\( \))\s*(.+)/#) { return Row(label: String(m.1), checked: false) }
+        if let m = text.wholeMatch(of: #/[●○]\s*(.+)/#) { return Row(label: String(m.1)) }
+        return Row(label: text)
+    }
+    return Prompt(kind: .list, line: question, rows: rows, cursor: c - lo)
 }
 
 private func claudeMenu(_ lines: [String]) -> Prompt? {
@@ -112,6 +173,7 @@ private func claudeMenu(_ lines: [String]) -> Prompt? {
 
 enum Answer: Equatable {
     case pick(Int)        // row index, toggles it in a multi-select
+    case submit           // done ticking boxes in a CLI checkbox list
     case yes, no
     case reply(String)
     case prevTab, nextTab // Claude multi-question
@@ -124,7 +186,9 @@ func keys(for a: Answer, in p: Prompt) -> (keys: [String], gap: Double) {
     func walk(to i: Int) -> [String] { Array(repeating: i > p.cursor ? down : up, count: abs(i - p.cursor)) }
 
     switch a {
-    case .pick(let i): return (walk(to: i) + ["\r"], 0.15)
+    // CLI checkbox lists toggle with Space and submit with Enter, Claude's toggle with Enter
+    case .pick(let i): return (walk(to: i) + [p.kind == .list && p.isMulti ? " " : "\r"], 0.15)
+    case .submit: return (["\r"], 0)
     case .yes: return (["y\r"], 0)
     case .no: return (["n\r"], 0)
     case .prevTab: return (["\u{1b}[D"], 0)
