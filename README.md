@@ -32,14 +32,7 @@ brew install --cask adityaadpandey/tap/notchy
 
 Both put Notchy in Applications and open it. Run the same command again to update.
 
-<details>
-<summary>Prefer a disk image?</summary>
-
-Download **Notchy.dmg** from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest) and drag Notchy onto Applications.
-
-Notchy isn't notarized by Apple yet, so the first time you open it macOS will say it can't check it. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. The two commands above skip this step.
-
-</details>
+Please install with one of these rather than downloading the zip in your browser. Notchy isn't notarized by Apple yet, so a browser download opens with "Apple could not verify Notchy.app". The commands above never show that.
 
 **You'll need** macOS 14 Sonoma or later, and [iTerm2](https://iterm2.com) or the Terminal app that comes with your Mac. No notch? Notchy hangs from the top middle of the screen instead.
 
@@ -141,11 +134,10 @@ You'll need the Xcode command line tools (`xcode-select --install`).
 ```sh
 make install   # build and install to ~/Applications
 make check     # run the tests
-make dmg       # build the disk image
 make icon      # redraw the app icon from Tools/icon.swift
 ```
 
-**Releasing:** bump `CFBundleShortVersionString` in `Info.plist`, then run `make release`. It publishes the zip and the disk image on GitHub, and updates the [Homebrew cask](https://github.com/Adityaadpandey/homebrew-tap) to the new version.
+**Releasing:** bump `CFBundleShortVersionString` in `Info.plist`, then run `make release`. It publishes the zip on GitHub, and updates the [Homebrew cask](https://github.com/Adityaadpandey/homebrew-tap) to the new version.
 
 ## License
 

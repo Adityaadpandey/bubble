@@ -31,18 +31,12 @@ icon:
 dist: build
 	ditto -c -k --keepParent $(APP) build/Notchy.zip
 
-# build/Notchy.dmg: the usual window where you drag Notchy onto Applications
-dmg: build
-	rm -rf build/dmg build/Notchy.dmg
-	mkdir -p build/dmg
-	cp -R $(APP) build/dmg/
-	ln -s /Applications build/dmg/Applications
-	hdiutil create -volname Notchy -srcfolder build/dmg -ov -format UDZO build/Notchy.dmg
-
-# Publishes both on GitHub as v<CFBundleShortVersionString> from Info.plist. install.sh always fetches
+# Publishes the zip on GitHub as v<CFBundleShortVersionString> from Info.plist. install.sh always fetches
 # the newest release's Notchy.zip, so bump the version in Info.plist before each release.
-release: dist dmg
-	gh release create v$(VERSION) build/Notchy.zip build/Notchy.dmg --title "Notchy $(VERSION)" --generate-notes
+# No disk image: Notchy isn't notarized, so anything opened from a browser download gets the
+# "Apple could not verify" warning. The curl and brew installs never do, so those are the only ways in.
+release: dist
+	gh release create v$(VERSION) build/Notchy.zip --title "Notchy $(VERSION)" --generate-notes
 	$(MAKE) cask
 
 # Points the Homebrew cask (github.com/Adityaadpandey/homebrew-tap) at this version's zip, so
@@ -62,4 +56,4 @@ install: build
 	cp -R $(APP) ~/Applications/
 	open ~/Applications/Notchy.app
 
-.PHONY: build check icon dist dmg release cask install debug
+.PHONY: build check icon dist release cask install debug
