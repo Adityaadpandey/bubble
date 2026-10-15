@@ -21,6 +21,7 @@ final class CardModel: ObservableObject {
     @Published var detail: Detail?
     @Published var sent: Prompt?  // what we last answered, the card dims until the screen moves on
     @Published var keyboard = false // focused with ⌃⌥Space
+    @Published var failed = false   // the last answer couldn't be typed into iTerm2
     var snapshot = ""
     var sentAt = Date.distantPast
     var repinged = false
@@ -110,6 +111,10 @@ struct CardView: View {
                     Label(p.rows[i].label, systemImage: "arrow.right").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)
+            }
+            if model.failed {
+                Label("Couldn't type into iTerm2. Try again, or open the tab.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12)).foregroundStyle(.red)
             }
             replyBox
             footer

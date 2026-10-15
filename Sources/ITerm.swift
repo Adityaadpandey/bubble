@@ -80,15 +80,16 @@ final class ITerm {
             return tailof(s)
         end readone
 
+        -- keys are read by index: inside a tell to iTerm2, "contents of k" means iTerm2's own
+        -- contents property and fails, which used to silently drop every key
         on sendkeys(sid, wid, ti, si, keyList, gap)
             set s to findsession(sid, wid, ti, si)
             if s is missing value then return false
-            tell application "iTerm2"
-                repeat with k in keyList
-                    tell s to write text (contents of k) newline NO
-                    delay gap
-                end repeat
-            end tell
+            repeat with i from 1 to count of keyList
+                set k to item i of keyList
+                tell application "iTerm2" to tell s to write text k newline NO
+                delay gap
+            end repeat
             return true
         end sendkeys
 
@@ -140,8 +141,9 @@ final class ITerm {
         call("readone", [s.id, s.window, s.tab, s.pane])?.stringValue ?? ""
     }
 
-    func send(_ s: Session, _ keys: [String], gap: Double) {
-        _ = call("sendkeys", [s.id, s.window, s.tab, s.pane, keys, gap])
+    // true only if every key made it into the tab
+    func send(_ s: Session, _ keys: [String], gap: Double) -> Bool {
+        call("sendkeys", [s.id, s.window, s.tab, s.pane, keys, gap])?.booleanValue ?? false
     }
 
     private func call(_ handler: String, _ args: [Any]) -> NSAppleEventDescriptor? {

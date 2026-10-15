@@ -140,6 +140,7 @@ final class App: NSObject, NSApplicationDelegate {
             }
 
             if let card = cards[s.id] {
+                if card.failed, card.prompt != found { card.failed = false } // something got through after all
                 // mid-walk the screen shows the cursor halfway there, don't mirror that
                 if inFlight[s.id, default: 0] > 0 { continue }
                 if let found {
@@ -327,9 +328,15 @@ final class App: NSObject, NSApplicationDelegate {
                 if expected.kind != .idle, let now { prompt = now } // fresh cursor, in case you moved it in the terminal
             }
             let (keys, gap) = keys(for: a, in: prompt)
-            iterm.send(where_, keys, gap: gap)
+            let ok = iterm.send(where_, keys, gap: gap)
             DispatchQueue.main.async {
                 self.inFlight[id, default: 1] -= 1
+                if !ok, let card = self.cards[id] {
+                    // undo the optimistic tick or Sent badge and say so, instead of pretending it worked
+                    card.prompt = expected
+                    card.sent = nil
+                    card.failed = true
+                }
                 self.tick() // don't wait a whole second to show what happened
             }
         }
