@@ -12,6 +12,7 @@ Click an answer and it types it into the right iTerm2 tab. No more hunting for t
 [![Latest release](https://img.shields.io/github/v/release/Adityaadpandey/notchy?label=release&color=f97316)](https://github.com/Adityaadpandey/notchy/releases/latest)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple)
 ![Apple silicon and Intel](https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111)
+[![MIT license](https://img.shields.io/badge/license-MIT-111)](LICENSE)
 
 <img src="docs/card.jpg" alt="A Claude Code permission prompt hanging from the MacBook notch, with Yes, Yes and don't ask again, and No buttons">
 
@@ -143,3 +144,7 @@ make icon      # redraw the app icon from Tools/icon.swift
 ```
 
 **Releasing:** bump `CFBundleShortVersionString` in `Info.plist`, then run `make release`. It publishes the zip and the disk image on GitHub, and updates the [Homebrew cask](https://github.com/Adityaadpandey/homebrew-tap) to the new version.
+
+## License
+
+[MIT](LICENSE). Use it, change it, share it.
