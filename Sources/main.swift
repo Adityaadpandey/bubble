@@ -57,13 +57,21 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     exit(0)
 }
 
-// e.g. "/dev/ttys019", or nil when this process isn't attached to a terminal
+// e.g. "/dev/ttys019", or nil when nothing above us is attached to a terminal.
+// Claude starts hooks detached from the terminal, so the hook itself has no tty, but Claude does:
+// hook (no tty) → maybe a shell (no tty) → claude (ttys019), so walk up the parents until one has it.
 func controllingTTY() -> String? {
-    var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
-    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
-    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, info.kp_eproc.e_tdev != -1,
-          let name = devname(info.kp_eproc.e_tdev, S_IFCHR) else { return nil }
-    return "/dev/" + String(cString: name)
+    var pid = getpid()
+    for _ in 0..<8 where pid > 1 {
+        var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return nil }
+        if info.kp_eproc.e_tdev != -1, let name = devname(info.kp_eproc.e_tdev, S_IFCHR) {
+            return "/dev/" + String(cString: name)
+        }
+        pid = info.kp_eproc.e_ppid
+    }
+    return nil
 }
 
 // ~/Library/Logs/Notchy.log, one line per card opened or closed and per answer sent, e.g.
