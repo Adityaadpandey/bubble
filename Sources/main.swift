@@ -90,8 +90,9 @@ final class App: NSObject, NSApplicationDelegate {
     var dashClosedAt = Date.distantPast
     var notchButton: NSPanel?
     var dashSub: AnyCancellable?
-    var notchHover: Hover?
-    var dashHover: Hover?
+    var dashByHover = false
+    var hoverSince: Date?  // when the mouse came to rest on the notch
+    var awaySince: Date?   // when the mouse left a dashboard that hovering opened
 
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem.button?.imagePosition = .imageLeading
@@ -100,6 +101,7 @@ final class App: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         updateIcon()
         makeNotchButton()
+        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.checkHover() }
         dashSub = dashboard.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.placeDashboard() } }
         iterm.onDenied = { [weak self] denied in
             guard let self, self.dashboard.accessDenied != denied else { return }
@@ -260,15 +262,8 @@ final class App: NSObject, NSApplicationDelegate {
         host.sizingOptions = [.intrinsicContentSize] // still reports its size, but leaves placing the window to us, pinned to the top of the screen
         let panel = NotchPanel(host, raised: 4) // above any card sitting in the notch
         panel.dismiss = { [weak self] in self?.hideDashboard() }
-        dashHover = Hover(host, assumeInside: true)
-        dashHover?.exit = { [weak self, weak panel] in
-            // a short grace period, so cutting a corner on the way to a row doesn't close it
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                guard let self, let panel, self.dashPanel === panel, !panel.isKeyWindow,
-                      !panel.frame.contains(NSEvent.mouseLocation) else { return }
-                self.hideDashboard()
-            }
-        }
+        dashByHover = hover
+        awaySince = nil
         dashPanel = panel
         placeDashboard()
         if hover { panel.orderFrontRegardless() } else { panel.makeKeyAndOrderFront(nil) }
@@ -289,21 +284,41 @@ final class App: NSObject, NSApplicationDelegate {
         panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
     }
 
-    // An invisible button over the notch itself, so clicking or hovering over the notch opens the dashboard.
+    // Resting the mouse on the notch for a tenth of a second opens the dashboard; just brushing past on the
+    // way to the menu bar doesn't. If hovering opened it, it closes once the mouse has been off it for a
+    // quarter of a second, unless you clicked into it by then (then Esc or clicking away closes it).
+    //
+    // ponytail: this looks at the mouse 20 times a second rather than using tracking areas. Those got stuck
+    // after the dashboard covered the notch: they never saw the mouse leave, so never saw it come back.
+    // A cheap position check can't get out of step like that.
+    func checkHover() {
+        let mouse = NSEvent.mouseLocation
+        let now = Date()
+        if let panel = dashPanel {
+            guard dashByHover, !panel.isKeyWindow else { return }
+            if panel.frame.contains(mouse) { awaySince = nil; return }
+            if now.timeIntervalSince(awaySince ?? now) > 0.25 { hideDashboard() } else if awaySince == nil { awaySince = now }
+            return
+        }
+        // a card sitting in the notch already owns that spot
+        guard order.isEmpty, let rect = notchRect, rect.contains(mouse) else { hoverSince = nil; return }
+        if now.timeIntervalSince(hoverSince ?? now) >= 0.1 { hoverSince = nil; showDashboard(hover: true) } else if hoverSince == nil { hoverSince = now }
+    }
+
+    // The notch on screen, a point taller so the very top row of pixels counts too
+    var notchRect: NSRect? {
+        let size = notchSize
+        guard size.width > 0, let screen = notchScreen else { return nil }
+        return NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height + 1)
+    }
+
+    // An invisible button over the notch itself, so clicking the notch opens the dashboard.
     // Nothing is drawn: a fully clear window lets clicks fall through, so it's filled at 0.1% opacity,
     // which no one can see but still counts as something to click. It stops short of the notch's edges too.
     func makeNotchButton() {
         let size = notchSize
         guard size.width > 0, let screen = notchScreen else { return }
         let view = ClickView { [weak self] in self?.toggleDashboard() }
-        // resting on the notch for a tenth of a second opens it, just brushing past on the way to the menu bar doesn't
-        notchHover = Hover(view)
-        notchHover?.enter = { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                guard let self, let button = self.notchButton, button.frame.contains(NSEvent.mouseLocation) else { return }
-                self.showDashboard(hover: true)
-            }
-        }
         let panel = NotchPanel(view, raised: 2)
         panel.backgroundColor = NSColor.black.withAlphaComponent(0.001)
         panel.ignoresMouseEvents = false // said out loud, so the clear parts take clicks too
@@ -553,23 +568,4 @@ final class ClickView: NSView {
     required init?(coder: NSCoder) { nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { action() }
-}
-
-// Tells you when the mouse comes into or leaves a view, even while NotiApp isn't the active app.
-// `assumeInside` is for a window that appears right under the mouse: it never sees the mouse come in,
-// but should still hear about it leaving.
-final class Hover: NSResponder {
-    var enter: (() -> Void)?
-    var exit: (() -> Void)?
-
-    init(_ view: NSView, assumeInside: Bool = false) {
-        super.init()
-        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
-        if assumeInside { options.insert(.assumeInside) }
-        view.addTrackingArea(NSTrackingArea(rect: .zero, options: options, owner: self))
-    }
-    required init?(coder: NSCoder) { nil }
-
-    override func mouseEntered(with event: NSEvent) { enter?() }
-    override func mouseExited(with event: NSEvent) { exit?() }
 }
