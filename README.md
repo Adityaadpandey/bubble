@@ -38,11 +38,16 @@ Please install with one of these rather than downloading the zip in your browser
 
 ## Getting set up
 
-It takes about a minute, and Notchy asks for everything as it goes:
+The first time you open Notchy, a short welcome drops out of the notch and walks you through setup. It takes about a minute, and macOS only asks for a permission when you click the button for it, never all at once.
 
-1. **Allow Notchy to control iTerm2 or Terminal** when macOS asks. That's how it reads prompts and types your answers.
-2. **Connect Claude Code** (optional). Hover over the notch and click the button. Cards then show the exact command or diff you're approving, and Notchy pings you when Claude finishes.
-3. **Allow Keychain access** (optional) the first time Notchy shows your Claude usage. Choose *Always Allow*, or *Deny* to skip Claude usage.
+<img src="docs/onboarding.jpg" alt="Notchy's welcome hanging from the notch, on the step that lets it control iTerm2 and Terminal, with iTerm2 allowed and an Allow button for Terminal">
+
+1. **Your terminal.** Click **Allow** next to iTerm2 and Terminal (whichever you use), then **OK** when macOS asks. That's how Notchy reads prompts and types your answers. tmux, kitty and WezTerm don't need this, see [Other terminals](#other-terminals).
+2. **Claude Code** (optional, only if it's installed). **Connect** adds two hooks to Claude Code's settings, so cards show the exact command or diff you're approving and Notchy pings you when Claude finishes.
+3. **Usage limits** (optional). **Show my limits** brings up macOS's Keychain prompt so Notchy can read Claude Code's login. Choose *Always Allow*. Skip it and Notchy leaves the Keychain alone until you open the dashboard.
+4. **Done.** Choose whether Notchy opens at login, and you're set.
+
+Click **Later** or press Esc to finish setting up another time. You can reopen the welcome any time from **⋯ → Welcome to Notchy…**.
 
 ## What it does
 
@@ -118,7 +123,7 @@ Changes apply straight away, and cards you open next use the new look.
 - **Pause** Notchy for an hour, or until you resume it, from the dashboard.
 - **Nudges you once** if a prompt has been waiting for two minutes.
 - **Teach it a new CLI** in **⋯ → Edit prompt patterns…**: one regex per line, matched against the last line of each tab.
-- **Opens at login.** Turn that off in the **⋯** menu.
+- **Opens at login**, unless you turned that off during setup. Change it any time in the **⋯** menu.
 
 ## Privacy
 
