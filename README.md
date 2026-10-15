@@ -75,6 +75,16 @@ Notchy reads and answers these through their own command line tools, so they nee
 
 Ghostty, Warp and Alacritty can't be read from outside, so use tmux in them.
 
+### Pings you when a tool finishes
+
+Claude Code does this once you've connected it. For anything else that can run a command when it's done, call `Notchy notify`, and a card opens on that tab:
+
+```sh
+/Applications/Notchy.app/Contents/MacOS/Notchy notify "Build finished"
+```
+
+**pi** has an extension for it. Copy [`integrations/pi-notchy.ts`](integrations/pi-notchy.ts) to `~/.pi/agent/extensions/notchy.ts` and Notchy pings you whenever pi has finished and won't carry on by itself.
+
 ### Shows what's running and how much you have left
 
 <img src="docs/dashboard.jpg" alt="The Notchy dashboard showing waiting and working tabs, and usage limits for Claude, Codex and Command Code">
