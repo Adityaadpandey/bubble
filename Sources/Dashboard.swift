@@ -30,6 +30,7 @@ struct DashboardView: View {
     let pick: (String) -> Void
     let pause: (Date?) -> Void
     let editPatterns: () -> Void
+    let showSettings: () -> Void
     let openSettings: () -> Void
     let connectClaude: () -> Void
     let welcome: () -> Void
@@ -98,6 +99,7 @@ struct DashboardView: View {
                 }
                 Spacer()
                 Menu {
+                    Button("Settings…", action: showSettings)
                     Button("Edit prompt patterns…", action: editPatterns)
                     if !model.claudeConnected { Button("Connect Claude Code", action: connectClaude) }
                     Toggle("Open at Login", isOn: Binding(

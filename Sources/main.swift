@@ -126,6 +126,7 @@ final class App: NSObject, NSApplicationDelegate {
     let terminals = Terminals()
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
+    var settingsWindow: NSWindow?
     var appliedChoices = ""                   // Prefs.watchedChoices as of the last applyChoices()
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let dashboard = Dashboard()
@@ -347,6 +348,7 @@ final class App: NSObject, NSApplicationDelegate {
             pick: { [weak self] id in self?.hideDashboard(); self?.pick(id) },
             pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
             editPatterns: { [weak self] in self?.hideDashboard(); self?.editPatterns() },
+            showSettings: { [weak self] in self?.hideDashboard(); self?.showSettings() },
             openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() },
             connectClaude: { [weak self] in self?.connectClaude() },
             welcome: { [weak self] in self?.hideDashboard(); self?.showWelcome() }))
@@ -684,6 +686,20 @@ final class App: NSObject, NSApplicationDelegate {
 
     func focus(_ id: String) {
         known[id].map(terminals.focus)
+    }
+
+    // one Settings window, brought forward again if it's already open
+    func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            window.title = "Notchy Settings"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        NSApp.activate()
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     func openAutomationSettings() {
