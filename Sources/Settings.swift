@@ -16,6 +16,14 @@ struct SettingsView: View {
     private let meters = ["Claude", "Codex", "Command Code"]
 
     var body: some View {
+        TabView {
+            form.tabItem { Label("Settings", systemImage: "gearshape") }
+            HistoryView().tabItem { Label("History", systemImage: "clock") }
+        }
+        .frame(width: 440, height: 600)
+    }
+
+    private var form: some View {
         Form {
             Section("Alerts") {
                 Picker("Remind me again after", selection: $nudge) {
@@ -79,7 +87,45 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 600)
+    }
+}
+
+// What you answered from the notch, newest first, e.g. "Claude Code · notchy   Yes   rm -rf build"
+private struct HistoryView: View {
+    @ObservedObject private var history = History.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if history.entries.isEmpty {
+                Text("Nothing yet. Answers you send from the notch show up here.")
+                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(history.entries) { e in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(e.tab).fontWeight(.medium).lineLimit(1)
+                            Spacer()
+                            Text(e.at.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                        }
+                        Text(e.question).foregroundStyle(.secondary).lineLimit(2)
+                        if !e.command.isEmpty {
+                            Text(e.command).font(.system(size: 11, design: .monospaced)).lineLimit(2).textSelection(.enabled)
+                        }
+                        Text(e.answer).font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(e.answer.hasPrefix("No") ? Color.red : .green)
+                    }
+                    .font(.system(size: 12))
+                    .padding(.vertical, 3)
+                }
+            }
+            Divider()
+            HStack {
+                Text("Typed replies are never saved.").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Clear", role: .destructive) { history.clear() }.disabled(history.entries.isEmpty)
+            }
+            .padding(10)
+        }
     }
 }
 
