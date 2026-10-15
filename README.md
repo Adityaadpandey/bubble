@@ -34,7 +34,7 @@ Both put Notchy in Applications and open it. Run the same command again to updat
 
 Please install with one of these rather than downloading the zip in your browser. Notchy isn't notarized by Apple yet, so a browser download opens with "Apple could not verify Notchy.app". The commands above never show that.
 
-**You'll need** macOS 14 Sonoma or later, and [iTerm2](https://iterm2.com) or the Terminal app that comes with your Mac. No notch? Notchy hangs from the top middle of the screen instead.
+**You'll need** macOS 14 Sonoma or later, and one of [iTerm2](https://iterm2.com), the Terminal app that comes with your Mac, [tmux](#other-terminals), [kitty](#other-terminals) or [WezTerm](#other-terminals). No notch? Notchy hangs from the top middle of the screen instead.
 
 ## Getting set up
 
@@ -59,7 +59,21 @@ It understands:
 
 Anything asking for a password stays in the terminal.
 
-In Terminal, Notchy can only type a line and press Enter, so a few answers need keys Terminal can't send: ticking checkboxes, typing your own reply to a Claude menu, and Claude's prompts with several questions. For those the card's ↗ button takes you to the tab. iTerm2 handles everything.
+In Terminal, Notchy can only type a line and press Enter, so a few answers need keys Terminal can't send: ticking checkboxes, typing your own reply to a Claude menu, and Claude's prompts with several questions. For those the card's ↗ button takes you to the tab. iTerm2, tmux, kitty and WezTerm handle everything.
+
+### Other terminals
+
+Notchy reads and answers these through their own command line tools, so they need no Automation permission:
+
+- **tmux** works with no setup, and in any terminal you run it in, including Ghostty, Warp, Alacritty and the VS Code terminal.
+- **kitty** needs remote control on a socket. Add these two lines to `kitty.conf` and restart kitty:
+  ```
+  allow_remote_control socket-only
+  listen_on unix:/tmp/kitty
+  ```
+- **WezTerm** works with no setup.
+
+Ghostty, Warp and Alacritty can't be read from outside, so use tmux in them.
 
 ### Shows what's running and how much you have left
 
