@@ -22,6 +22,9 @@ final class CardModel: ObservableObject {
     @Published var sent: Prompt?  // what we last answered, the card dims until the screen moves on
     @Published var keyboard = false // focused with ⌃⌥Space
     @Published var failed = false   // the last answer couldn't be typed into iTerm2
+    @Published var docked = false   // the top card, hanging from the notch
+    @Published var notch = CGSize.zero // the notch's size, so nothing hides behind it and cards can grow out of it
+    @Published var leaving = false  // folding back into the notch before the window goes away
     var snapshot = ""
     var sentAt = Date.distantPast
     var repinged = false
@@ -36,7 +39,7 @@ final class CardModel: ObservableObject {
     var waitingOnSend: Bool { sent == prompt }
 }
 
-// A floating card in the top-right corner, above every app and full screen spaces.
+// A card that drops out of the notch, above the menu bar, every app and full screen spaces.
 // It never activates NotiApp, so whatever you were typing in keeps focus until you click into the card.
 final class CardPanel: NSPanel {
     let host: NSHostingView<CardView>
@@ -47,16 +50,19 @@ final class CardPanel: NSPanel {
         host = NSHostingView(rootView: view)
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false // App holds on to it, AppKit must not free it on close
-        level = .statusBar
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3) // over the menu bar, so it can touch the notch
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false // a window shadow is drawn once at full size and would hang around the notch while the card is folded up
         contentView = host
         fit()
     }
 
     func fit() { setContentSize(host.fittingSize) }
+
+    // AppKit nudges windows below the menu bar, but the docked card has to sit right against the top edge
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     // clicked into another app, so the card is no longer listening to the keyboard
     override func resignKey() {
@@ -71,6 +77,9 @@ struct CardView: View {
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
     @FocusState private var cardFocused: Bool
+    @State private var shown = false
+    @State private var size = CGSize(width: 380, height: 200)
+    private var open: Bool { shown && !model.leaving }
 
     private var p: Prompt { model.prompt }
     private var isClaude: Bool { p.kind == .menu || p.kind == .idle }
@@ -120,21 +129,46 @@ struct CardView: View {
             if model.keyboard { keyboardHint }
         }
         .padding(14)
+        .padding(.top, model.docked ? model.notch.height : 0)
         .frame(width: 360)
         .disabled(model.waitingOnSend)
         .opacity(model.waitingOnSend ? 0.55 : 1)
-        .overlay(alignment: .top) { if model.waitingOnSend { sentBadge } }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(model.keyboard ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: model.keyboard ? 2 : 1)
-        )
+        .overlay(alignment: .top) { if model.waitingOnSend { sentBadge.padding(.top, model.docked ? model.notch.height : 0) } }
+        .padding(.horizontal, model.docked ? NotchShape.ear : 0)
+        .background { if model.docked { notchFade } }
+        .glassEffect(.regular.tint(.black.opacity(0.35)), in: shape)
+        .overlay { if model.keyboard { shape.stroke(Color.accentColor, lineWidth: 2) } }
+        .environment(\.colorScheme, .dark)
+        // Opens like the notch is stretching: it starts as a black pill exactly the notch's size,
+        // springs out to the full card, and the black melts into glass as the text fades in.
+        // Closing plays the same thing backwards, so the card tucks itself back into the notch.
+        .overlay { shape.fill(.black).allowsHitTesting(false).opacity(open ? 0 : 1).animation(.easeOut(duration: 0.25).delay(open ? 0.12 : 0), value: open) }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        .scaleEffect(x: open ? 1 : min(max(model.notch.width, 180) / size.width, 1),
+                     y: open ? 1 : min(max(model.notch.height, 24) / size.height, 1), anchor: .top)
+        .onAppear { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { shown = true } }
+        .animation(.spring(duration: 0.3, bounce: 0), value: model.leaving)
         .animation(.easeOut(duration: 0.15), value: model.waitingOnSend)
         .focusable()
         .focusEffectDisabled()
         .focused($cardFocused)
         .onChange(of: model.keyboard) { _, on in cardFocused = on }
         .onKeyPress(action: key)
+    }
+
+    private var shape: AnyShape {
+        model.docked ? AnyShape(NotchShape()) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    // Solid black where the card meets the notch, melting into glass below it,
+    // so the notch looks like it stretched open rather than a window sitting under it
+    private var notchFade: some View {
+        VStack(spacing: 0) {
+            Color.black.frame(height: model.notch.height)
+            LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 36)
+            Spacer(minLength: 0)
+        }
+        .clipShape(NotchShape())
     }
 
     // ⌃⌥Space put the keyboard on this card. 1–9 pick, Y/N for yes/no prompts, ←/→ between questions,
@@ -308,5 +342,32 @@ struct RowButton: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .accessibilityLabel(row.checked == nil ? row.label : "\(row.label), \(row.checked! ? "checked" : "unchecked")")
+    }
+}
+
+// The outline of the card hanging from the notch: flat along the top of the screen, a small
+// inward curve on each side where it meets the menu bar (the same curve the notch itself has),
+// and soft rounded corners at the bottom. Picture an upside-down tab:
+//
+//   ‾‾╮                    ╭‾‾    <- top edge of the screen
+//     │                    │
+//     ╰────────────────────╯
+struct NotchShape: Shape {
+    static let ear: CGFloat = 10
+    var radius: CGFloat = 24
+
+    func path(in rect: CGRect) -> Path {
+        let (w, h, e, r) = (rect.width, rect.height, Self.ear, radius)
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: 0))
+        p.addQuadCurve(to: CGPoint(x: e, y: e), control: CGPoint(x: e, y: 0))
+        p.addLine(to: CGPoint(x: e, y: h - r))
+        p.addQuadCurve(to: CGPoint(x: e + r, y: h), control: CGPoint(x: e, y: h))
+        p.addLine(to: CGPoint(x: w - e - r, y: h))
+        p.addQuadCurve(to: CGPoint(x: w - e, y: h - r), control: CGPoint(x: w - e, y: h))
+        p.addLine(to: CGPoint(x: w - e, y: e))
+        p.addQuadCurve(to: CGPoint(x: w, y: 0), control: CGPoint(x: w - e, y: 0))
+        p.closeSubpath()
+        return p.offsetBy(dx: rect.minX, dy: rect.minY)
     }
 }

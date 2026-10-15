@@ -300,6 +300,9 @@ final class App: NSObject, NSApplicationDelegate {
         log("open \(s.id) \(prompt.kind) \(prompt.line.debugDescription) rows \(prompt.rows.map(\.label)) cursor \(prompt.cursor)")
         let card = CardModel(session: s.id, title: s.name, prompt: prompt, detail: detail)
         card.snapshot = s.tail
+        // decided before the card is drawn, so it opens already in its notch shape
+        card.docked = order.isEmpty
+        card.notch = notchSize
         let id = s.id
         let panel = CardPanel(CardView(model: card) { [weak self] action in
             DispatchQueue.main.async { self?.handle(id, action) } // let the button finish before its card changes
@@ -312,21 +315,35 @@ final class App: NSObject, NSApplicationDelegate {
         NSSound(named: "Glass")?.play()
     }
 
+    var notchScreen: NSScreen? { NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main }
+
+    // 185 x 32 on a 14" MacBook Pro. Screens without one get a notch-sized starting point anyway, so cards still grow from the top middle.
+    var notchSize: CGSize {
+        guard let s = notchScreen, let l = s.auxiliaryTopLeftArea, let r = s.auxiliaryTopRightArea else { return .zero }
+        return CGSize(width: r.minX - l.maxX, height: s.safeAreaInsets.top)
+    }
+
+    // The first card hangs from the notch and the rest line up underneath it.
+    // Prefers the MacBook's own screen; on a plain external display it hangs from the middle of the menu bar instead.
     func relayout() {
-        guard let screen = NSScreen.main?.visibleFrame else { return }
-        var top = screen.maxY - 12
-        for id in order {
-            guard let panel = panels[id] else { continue }
+        guard let screen = notchScreen else { return }
+        var top = screen.frame.maxY
+        for (i, id) in order.enumerated() {
+            guard let panel = panels[id], let card = cards[id] else { continue }
+            if card.docked != (i == 0) { card.docked = i == 0 }
+            if card.notch != notchSize { card.notch = notchSize }
             panel.fit()
-            panel.setFrameOrigin(NSPoint(x: screen.maxX - panel.frame.width - 12, y: top - panel.frame.height))
+            panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: top - panel.frame.height))
             top -= panel.frame.height + 10
         }
     }
 
     func close(_ id: String, _ why: String) {
         if cards[id] != nil { log("close \(id) \(why)") }
-        cards[id] = nil
-        panels.removeValue(forKey: id)?.close()
+        cards.removeValue(forKey: id)?.leaving = true
+        if let panel = panels.removeValue(forKey: id) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() } // once it has folded away
+        }
         order.removeAll { $0 == id }
         relayout()
     }
