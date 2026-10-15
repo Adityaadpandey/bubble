@@ -110,13 +110,6 @@ import Foundation
         precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")
         precondition(claudeActivity("⏺ All done, the build passes.\n❯ ") == nil)
 
-        // whatever you type in Reply must reach the terminal byte for byte, quotes and all
-        for text in ["plain", #"say "hi" \ there"#, "\u{1b}[B", "yes\r", "", #"" & do shell script "x" & ""#] {
-            var err: NSDictionary?
-            let back = NSAppleScript(source: "return \(appleScriptString(text))")?.executeAndReturnError(&err).stringValue
-            precondition(back == text, "round trip failed for \(text.debugDescription): \(String(describing: back)) \(String(describing: err))")
-        }
-
         print("all checks passed")
     }
 }

@@ -3,7 +3,6 @@ import ServiceManagement
 import Carbon
 import SwiftUI
 
-let iTermID = "com.googlecode.iterm2"
 let hookNote = Notification.Name("dev.notiapp.hook")
 let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notiapp/patterns.txt")
 
@@ -55,8 +54,6 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     exit(0)
 }
 
-struct Session { let id, name, tail: String }
-
 final class App: NSObject, NSApplicationDelegate {
     var cards: [String: CardModel] = [:]      // one live card per iTerm2 session that's waiting on you
     var panels: [String: CardPanel] = [:]
@@ -64,7 +61,11 @@ final class App: NSObject, NSApplicationDelegate {
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var changed: [String: (tail: String, at: Date)] = [:] // when each tab's screen last changed
-    var typingUntil: [String: Date] = [:]     // keys still on their way into a tab
+    var inFlight: [String: Int] = [:]         // answers whose keys haven't all landed yet
+    var known: [String: Session] = [:]        // every tab as of the last read
+    var front = ""                            // the tab in front in iTerm2
+    var reading = false
+    let iterm = ITerm()
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -83,6 +84,11 @@ final class App: NSObject, NSApplicationDelegate {
             editPatterns: { [weak self] in self?.editPatterns() },
             openSettings: { [weak self] in self?.openAutomationSettings() }))
         updateIcon()
+        iterm.onDenied = { [weak self] denied in
+            guard let self, self.dashboard.accessDenied != denied else { return }
+            self.dashboard.accessDenied = denied
+            self.updateIcon()
+        }
 
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
             try? FileManager.default.createDirectory(at: patternsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -93,15 +99,26 @@ final class App: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(hook(_:)), name: hookNote, object: nil)
         try? SMAppService.mainApp.register() // start at login
         hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
-        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.tick() }
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
     }
 
     // MARK: watching
 
+    // Reads every tab in the background, then updates cards here on the main thread
     func tick() {
+        guard !reading else { return }
+        reading = true
         // ponytail: re-reads a tiny file every tick, cache by mtime if it ever shows up in a profile
         patterns = loadPatterns((try? String(contentsOf: patternsFile, encoding: .utf8)) ?? "")
-        guard let (front, sessions) = readSessions() else { return }
+        iterm.readAll { [weak self] result in
+            self?.reading = false
+            if let result { self?.apply(front: result.front, sessions: result.sessions) }
+        }
+    }
+
+    func apply(front: String, sessions: [Session]) {
+        self.front = front
+        known = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var tabs: [TabStatus] = []
 
         for s in sessions {
@@ -124,7 +141,7 @@ final class App: NSObject, NSApplicationDelegate {
 
             if let card = cards[s.id] {
                 // mid-walk the screen shows the cursor halfway there, don't mirror that
-                if typing(s.id) { continue }
+                if inFlight[s.id, default: 0] > 0 { continue }
                 if let found {
                     // Live mirror: a ticked box, a moved cursor or the next question all land on the same card
                     if found != card.prompt { card.prompt = found }
@@ -171,7 +188,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     // A row in the dashboard: answer it on its card if it's waiting, otherwise jump to the tab
     func pick(_ id: String) {
-        if cards[id] == nil, let s = readSessions()?.1.first(where: { $0.id == id }),
+        if cards[id] == nil, let s = known[id],
            let found = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity) {
             hidden.remove(id)
             open(s, found, detail: details.removeValue(forKey: id))
@@ -194,7 +211,7 @@ final class App: NSObject, NSApplicationDelegate {
     // You count as looking if this exact tab is in front and you touched the keyboard or mouse in the last minute
     func isLooking(at id: String, front: String) -> Bool {
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == iTermID && front == id && idle < 60
+        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ITerm.bundleID && front == id && idle < 60
     }
 
     @objc func hook(_ note: Notification) {
@@ -206,8 +223,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         // Claude finished and is sitting at its input box
-        guard cards[id] == nil, !dashboard.paused, let (front, sessions) = readSessions(),
-              let s = sessions.first(where: { $0.id == id }), !isLooking(at: id, front: front) else { return }
+        guard cards[id] == nil, !dashboard.paused, let s = known[id], !isLooking(at: id, front: front) else { return }
         open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input"), detail: nil)
         relayout()
     }
@@ -280,27 +296,15 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
     }
 
-    func typing(_ id: String) -> Bool { (typingUntil[id] ?? .distantPast) > Date() }
-
     func answer(_ id: String, _ a: Answer) {
-        guard let card = cards[id] else { return }
-        // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-        // While our own keys are still landing the screen is half updated, so trust the card instead.
-        if !typing(id) {
-            guard let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
-            let now = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity)
-            if card.prompt.kind == .idle {
-                guard s.tail == card.snapshot else { return close(id) }
-            } else {
-                guard let now, now.kind == card.prompt.kind, now.line == card.prompt.line else { return close(id) }
-                card.prompt = now // fresh cursor position, in case you moved it in the terminal meanwhile
-            }
-        }
-        let (keys, gap) = keys(for: a, in: card.prompt)
-        press(id, keys, gap: gap)
+        guard let card = cards[id], let where_ = known[id] else { return }
+        let expected = card.prompt, snapshot = card.snapshot, pats = patterns
+        // if an earlier click's keys are still landing, the screen is half updated, so trust the card
+        let trustCard = inFlight[id, default: 0] > 0
 
-        if case .pick(let i) = a, card.prompt.rows[i].checked != nil {
-            // ticking a box: show it right away and keep the card live, you're probably ticking another
+        // answer on the card right away, the terminal catches up in the background
+        if case .pick(let i) = a, expected.rows[i].checked != nil {
+            // ticking a box: show it now and keep the card live, you're probably ticking another
             card.prompt.rows[i].checked?.toggle()
             card.prompt.cursor = i
         } else {
@@ -308,86 +312,31 @@ final class App: NSObject, NSApplicationDelegate {
             card.sent = card.prompt
             card.sentAt = Date()
         }
-    }
 
-    // MARK: iTerm2 via AppleScript
-
-    func readSessions() -> (String, [Session])? {
-        // `tell application "iTerm2"` would launch it, so only talk to it when it's already up
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: iTermID).first != nil else { return nil }
-        guard let r = run("""
-            set out to {}
-            set frontID to ""
-            try
-                set frontID to unique id of current session of current tab of current window
-            end try
-            set AppleScript's text item delimiters to linefeed
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        set c to contents of s
-                        set n to count of paragraphs of c
-                        if n > 50 then set n to 50
-                        set tailText to ""
-                        if n > 0 then set tailText to (paragraphs -n thru -1 of c) as text
-                        set end of out to {unique id of s, name of s, tailText}
-                    end repeat
-                end repeat
-            end repeat
-            return {frontID, out}
-            """) else { return nil }
-        let list = r.atIndex(2)!
-        let sessions = (0..<list.numberOfItems).compactMap { i -> Session? in
-            let item = list.atIndex(i + 1)!
-            guard let id = item.atIndex(1)?.stringValue else { return nil }
-            return Session(id: id, name: item.atIndex(2)?.stringValue ?? "iTerm2", tail: item.atIndex(3)?.stringValue ?? "")
-        }
-        return (r.atIndex(1)?.stringValue ?? "", sessions)
-    }
-
-    // Sends each chunk as its own keypress, a little apart, so TUIs like Claude don't see
-    // "↓ ↓ Enter" glued together as one unknown key
-    // Queued per tab, so a second click waits for the first one's keys instead of interleaving with them.
-    func press(_ id: String, _ keys: [String], gap: Double) {
-        let start = max(Date(), typingUntil[id] ?? .distantPast).timeIntervalSinceNow
-        for (i, key) in keys.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + start + gap * Double(i)) {
-                self.onSession(id, "tell s to write text \(appleScriptString(key)) newline NO")
+        inFlight[id, default: 0] += 1
+        iterm.queue.async { [self] in
+            var prompt = expected
+            if !trustCard {
+                // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
+                let tail = iterm.readTail(where_)
+                let now = detectPrompt(screen: tail, patterns: pats, quietFor: .infinity)
+                let still = expected.kind == .idle ? tail == snapshot : now.map { $0.kind == expected.kind && $0.line == expected.line } ?? false
+                guard still else {
+                    return DispatchQueue.main.async { self.inFlight[id, default: 1] -= 1; self.close(id) }
+                }
+                if expected.kind != .idle, let now { prompt = now } // fresh cursor, in case you moved it in the terminal
+            }
+            let (keys, gap) = keys(for: a, in: prompt)
+            iterm.send(where_, keys, gap: gap)
+            DispatchQueue.main.async {
+                self.inFlight[id, default: 1] -= 1
+                self.tick() // don't wait a whole second to show what happened
             }
         }
-        // a beat after the last key, read the screen again rather than waiting for the next tick
-        let done = start + gap * Double(keys.count) + 0.15
-        typingUntil[id] = Date().addingTimeInterval(done)
-        DispatchQueue.main.asyncAfter(deadline: .now() + done + 0.25) { self.tick() }
     }
 
     func focus(_ id: String) {
-        onSession(id, "tell w to select\ntell t to select\ntell s to select\nactivate")
-    }
-
-    func onSession(_ id: String, _ body: String) {
-        guard id.range(of: #"^[A-F0-9-]+$"#, options: .regularExpression) != nil else { return }
-        _ = run("""
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        if unique id of s is "\(id)" then
-                            \(body)
-                            return
-                        end if
-                    end repeat
-                end repeat
-            end repeat
-            """)
-    }
-
-    func run(_ body: String) -> NSAppleEventDescriptor? {
-        var err: NSDictionary?
-        let result = NSAppleScript(source: "tell application \"iTerm2\"\n\(body)\nend tell")?.executeAndReturnError(&err)
-        // -1743: you said no (or haven't been asked yet) to letting NotiApp control iTerm2
-        let denied = (err?[NSAppleScript.errorNumber] as? Int) == -1743
-        if dashboard.accessDenied != denied { dashboard.accessDenied = denied }
-        return err == nil ? result : nil
+        known[id].map(iterm.focus)
     }
 
     func openAutomationSettings() {

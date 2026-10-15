@@ -187,7 +187,7 @@ func keys(for a: Answer, in p: Prompt) -> (keys: [String], gap: Double) {
 
     switch a {
     // CLI checkbox lists toggle with Space and submit with Enter, Claude's toggle with Enter
-    case .pick(let i): return (walk(to: i) + [p.kind == .list && p.isMulti ? " " : "\r"], 0.15)
+    case .pick(let i): return (walk(to: i) + [p.kind == .list && p.isMulti ? " " : "\r"], 0.05)
     case .submit: return (["\r"], 0)
     case .yes: return (["y\r"], 0)
     case .no: return (["n\r"], 0)
@@ -197,7 +197,7 @@ func keys(for a: Answer, in p: Prompt) -> (keys: [String], gap: Double) {
         guard p.kind == .menu else { return ([text + "\r"], 0) }
         // Claude questions have a "Type something" row that turns into a text box, so answer there
         if let i = p.rows.firstIndex(where: { $0.label.hasPrefix("Type something") }) {
-            return (walk(to: i) + [text, "\r"], 0.15)
+            return (walk(to: i) + [text, "\r"], 0.05)
         }
         // permission dialogs don't, so back out with Esc and tell Claude once its input box is back
         return ([esc, text + "\r"], 0.6)
@@ -209,21 +209,6 @@ func loadPatterns(_ text: String) -> [NSRegularExpression] {
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .filter { !$0.isEmpty && !$0.hasPrefix("#") }
         .compactMap { try? NSRegularExpression(pattern: $0) }
-}
-
-// AppleScript strings can't hold control keys, so "\u{1b}[B" becomes ((character id 27) & "[B")
-// and Return goes in as (character id 13)
-func appleScriptString(_ s: String) -> String {
-    var parts: [String] = [], chunk = ""
-    func flush() {
-        if !chunk.isEmpty { parts.append("\"" + chunk.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"") }
-        chunk = ""
-    }
-    for u in s.unicodeScalars {
-        if u == "\u{1b}" || u == "\r" { flush(); parts.append("(character id \(u.value))") } else { chunk.unicodeScalars.append(u) }
-    }
-    flush()
-    return parts.isEmpty ? "\"\"" : "(" + parts.joined(separator: " & ") + ")"
 }
 
 /// What Claude is busy with, from its spinner line, e.g.
