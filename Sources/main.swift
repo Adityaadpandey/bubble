@@ -125,7 +125,6 @@ final class App: NSObject, NSApplicationDelegate {
     var hoverSince: Date?  // when the mouse came to rest on the notch
     var awaySince: Date?   // when the mouse left a dashboard that hovering opened
     var welcome: NotchPanel?  // the first-run onboarding, while it's up
-    var welcomeSub: AnyCancellable?
     var usageWaits = false    // you skipped usage limits, so the Keychain stays untouched until you open the dashboard
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -361,11 +360,18 @@ final class App: NSObject, NSApplicationDelegate {
             showUsage: { [weak self] in self?.refreshUsage() },
             openSettings: { [weak self] in self?.openAutomationSettings() },
             finish: { [weak self] in self?.finishWelcome(model) }))
-        host.sizingOptions = [.intrinsicContentSize]
+        // One fixed window, tall enough for any step and pinned to the top, so moving between steps never
+        // resizes it. A resize grows from the bottom edge and only gets pulled back up to the top a moment
+        // later, which showed as a stutter and a gap under the notch. The black shape animates inside instead,
+        // and the see-through rest of the window lets clicks pass.
+        let width = host.fittingSize.width // measured first: once it stops sizing itself it reports 0×0
+        host.sizingOptions = []
         let panel = NotchPanel(host, raised: 4)
+        panel.setContentSize(NSSize(width: width, height: 460))
         welcome = panel
-        welcomeSub = model.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.hang(panel) } }
-        hang(panel)
+        if let screen = notchScreen {
+            panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
+        }
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -373,7 +379,6 @@ final class App: NSObject, NSApplicationDelegate {
         guard let panel = welcome else { return }
         UserDefaults.standard.set(true, forKey: "onboarded")
         welcome = nil
-        welcomeSub = nil
         model.leaving = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { panel.close() }
         // never got to "Show my limits", so leave the Keychain alone until you open the dashboard

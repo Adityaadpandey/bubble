@@ -343,6 +343,7 @@ struct NotchChrome: ViewModifier {
     let notch: CGSize
     let leaving: Bool
     var outline: Color? = nil
+    var smoothResize = false // glide to a new size (onboarding steps) rather than snapping to it
     @State private var openedAt = Date()
     @State private var leftAt: Date?
     @State private var size = CGSize.zero
@@ -380,7 +381,9 @@ struct NotchChrome: ViewModifier {
                 .padding(.top, docked ? notch.height : 0)
                 .padding(.horizontal, docked ? NotchShape.ear : 0)
         }
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { new in
+                if smoothResize, size != .zero { withAnimation(.smooth(duration: 0.3)) { size = new } } else { size = new }
+            }
             .environment(\.colorScheme, .dark)
             .opacity(reveal)
             .blur(radius: (1 - reveal) * 8)

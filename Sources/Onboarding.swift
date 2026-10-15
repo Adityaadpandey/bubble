@@ -102,11 +102,14 @@ struct OnboardingView: View {
         .font(.system(size: 12.5))
         // fixed, so a long sentence wraps instead of stretching the panel out to its widest
         .frame(width: 478, alignment: .leading)
-        .padding(16)
+        // the chrome already leaves the notch's height above this, so only a little more on top
+        .padding(EdgeInsets(top: 6, leading: 16, bottom: 16, trailing: 16))
         // Esc closes it like Later does, on every step
         .background { Button("", action: finish).keyboardShortcut(.cancelAction).opacity(0) }
-        .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
+        .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving, smoothResize: true))
         .animation(.easeOut(duration: 0.15), value: model.at)
+        // its window is a fixed size, taller than any step, so hang from the top of it
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var title: String {
