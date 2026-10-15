@@ -1,15 +1,28 @@
 import Foundation
 
-enum PromptKind: String { case claude, yesNo, idle }
+enum PromptKind: String { case menu, yesNo, idle }
+
+struct Row: Equatable {
+    let label: String
+    var number: Int? = nil   // the "3." in Claude menus, nil for rows like "Next"
+    var checked: Bool? = nil // nil when the row isn't a checkbox
+}
+
+// One question in a Claude multi-question prompt, from the strip "←  ☒ Alerts  ☐ Keyboard  ✔ Submit  →"
+struct QuestionTab: Equatable {
+    let label: String
+    let done: Bool
+}
 
 struct Prompt: Equatable {
     let kind: PromptKind
-    let line: String
-    var options: [String] = [] // Claude menus only, e.g. ["Yes", "Yes, and don't ask again", "No"]
-    var cursor = 0             // which option (1-based) the ❯ is on right now
+    let line: String          // the question itself
+    var rows: [Row] = []
+    var cursor = 0            // which row the ❯ is on right now
+    var tabs: [QuestionTab] = []
+    var context: [String] = [] // what sits above the question, e.g. "Bash command" / "npm install left-pad"
 
-    // Same question still waiting, even if you moved the cursor around in the terminal
-    func sameAs(_ other: Prompt?) -> Bool { other?.kind == kind && other?.line == line }
+    var isMulti: Bool { rows.contains { $0.checked != nil } }
 }
 
 // Written to ~/.config/notiapp/patterns.txt on first launch, edit that file to teach it new CLIs
@@ -25,33 +38,25 @@ private let trimSet = CharacterSet.whitespaces.union(CharacterSet(charactersIn: 
 
 /// Looks at the bottom of a terminal screen and says whether something is waiting on you.
 ///
-/// Claude Code menus (permission dialogs and its multiple choice questions) are spotted
-/// anywhere in the last few lines: a ❯ cursor sitting on a numbered list, e.g.
-///     Do you want to proceed?
-///     ❯ 1. Yes
-///       2. Yes, and don't ask again
-/// The line right above "1." is the question.
+/// Claude Code menus (permission dialogs, its questions, multi-select, multi-question) are a ❯ cursor
+/// somewhere in a numbered list near the bottom, with the question on the line right above "1.":
+///     ←  ☒ Alerts  ☐ Keyboard  ✔ Submit  →
+///     Smarter alerts: which of these do you want?
+///     ❯ 1. [✔] Confirmation toast
+///       2. [ ] Re-ping if ignored
+///          Next
 /// Everything else only counts on the very last line, and only if nothing was typed after it,
 /// so "Overwrite? [y/N]" fires but an already answered "Overwrite? [y/N] y" does not.
 func detectPrompt(screen: String, patterns: [NSRegularExpression]) -> Prompt? {
-    let lines = screen.components(separatedBy: .newlines)
-        .map { $0.trimmingCharacters(in: trimSet) }
-        .filter { !$0.isEmpty }
+    let raw = screen.components(separatedBy: .newlines)
+    // a line made only of ─ is a divider, kept as "" so context stops there
+    let all = raw.map { $0.contains("──") && $0.trimmingCharacters(in: trimSet).isEmpty ? "" : $0.trimmingCharacters(in: trimSet) }
+    let lines = all.enumerated().filter { !$0.element.isEmpty || raw[$0.offset].contains("──") }.map(\.element)
 
-    var options: [String] = [], cursor = 0, question = "", previous = ""
-    for l in lines.suffix(25) {
-        guard let m = l.wholeMatch(of: #/(❯\s*)?(\d+)\.\s+(.+)/#), let n = Int(m.2) else { previous = l; continue }
-        if n == 1 { options = []; cursor = 0; question = previous }
-        guard n == options.count + 1 else { continue } // a stray "7." in the description lines
-        options.append(String(m.3))
-        if m.1 != nil { cursor = n }
-    }
-    if options.count >= 2, cursor > 0 {
-        return Prompt(kind: .claude, line: question, options: options, cursor: cursor)
-    }
+    if let menu = claudeMenu(Array(lines.suffix(40))) { return menu }
 
-    guard let last = lines.last else { return nil }
-    // Never push password prompts into Notification Center
+    guard let last = lines.last(where: { !$0.isEmpty }) else { return nil }
+    // Never push password prompts onto the screen
     if last.range(of: "pass(word|phrase|code)", options: [.regularExpression, .caseInsensitive]) != nil { return nil }
 
     let ns = last as NSString
@@ -59,10 +64,80 @@ func detectPrompt(screen: String, patterns: [NSRegularExpression]) -> Prompt? {
         guard let m = re.firstMatch(in: last, range: NSRange(location: 0, length: ns.length)) else { continue }
         let rest = ns.substring(from: m.range.upperBound)
         if rest.trimmingCharacters(in: CharacterSet(charactersIn: " :?>")).isEmpty {
-            return Prompt(kind: .yesNo, line: last)
+            return Prompt(kind: .yesNo, line: last, rows: [Row(label: "Yes"), Row(label: "No")])
         }
     }
     return nil
+}
+
+private func claudeMenu(_ lines: [String]) -> Prompt? {
+    var rows: [Row] = [], cursor = -1, questionAt = -1, started = false
+
+    for (i, l) in lines.enumerated() {
+        if let m = l.wholeMatch(of: #/(❯\s*)?(\d+)\.\s+(.+)/#), let n = Int(m.2) {
+            if n == 1 { rows = []; cursor = -1; started = true; questionAt = i - 1 }
+            // skip a stray "7." inside a description line
+            guard started, n == (rows.compactMap(\.number).last ?? 0) + 1 else { continue }
+            var label = String(m.3), checked: Bool? = nil
+            if let box = label.wholeMatch(of: #/\[(.)\]\s*(.+)/#) {
+                checked = box.1 != " "
+                label = String(box.2)
+            }
+            if m.1 != nil { cursor = rows.count }
+            rows.append(Row(label: label, number: n, checked: checked))
+        } else if started, let m = l.wholeMatch(of: #/(❯\s*)?(Next|Submit)/#) {
+            // multi-select has an unnumbered "Next" row the cursor can sit on
+            if m.1 != nil { cursor = rows.count }
+            rows.append(Row(label: String(m.2)))
+        }
+    }
+    guard rows.filter({ $0.number != nil }).count >= 2, cursor >= 0, questionAt >= 0 else { return nil }
+
+    // Walk up from the question collecting context, until a divider
+    var context: [String] = [], tabs: [QuestionTab] = []
+    for l in lines[..<questionAt].reversed() {
+        if l.isEmpty { break }
+        if let strip = l.wholeMatch(of: #/←\s+(.+?)\s+→/#) {
+            tabs = String(strip.1).components(separatedBy: "  ").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .map { QuestionTab(label: String($0.dropFirst()).trimmingCharacters(in: .whitespaces), done: $0.hasPrefix("☒")) }
+            break
+        }
+        if l.hasPrefix("☐") || l.hasPrefix("☒") { break } // the "☐ Notifs" chip on single questions
+        context.insert(l, at: 0)
+        if context.count == 4 { break }
+    }
+    return Prompt(kind: .menu, line: lines[questionAt], rows: rows, cursor: cursor, tabs: tabs, context: context)
+}
+
+enum Answer: Equatable {
+    case pick(Int)        // row index, toggles it in a multi-select
+    case yes, no
+    case reply(String)
+    case prevTab, nextTab // Claude multi-question
+}
+
+/// The keystrokes that answer `p`, sent one chunk at a time `gap` seconds apart.
+/// Picking walks the ❯ from where it is now, e.g. cursor on row 0 and pick(2) is ↓ ↓ Enter.
+func keys(for a: Answer, in p: Prompt) -> (keys: [String], gap: Double) {
+    let down = "\u{1b}[B", up = "\u{1b}[A", esc = "\u{1b}"
+    func walk(to i: Int) -> [String] { Array(repeating: i > p.cursor ? down : up, count: abs(i - p.cursor)) }
+
+    switch a {
+    case .pick(let i): return (walk(to: i) + ["\r"], 0.15)
+    case .yes: return (["y\r"], 0)
+    case .no: return (["n\r"], 0)
+    case .prevTab: return (["\u{1b}[D"], 0)
+    case .nextTab: return (["\u{1b}[C"], 0)
+    case .reply(let text):
+        guard p.kind == .menu else { return ([text + "\r"], 0) }
+        // Claude questions have a "Type something" row that turns into a text box, so answer there
+        if let i = p.rows.firstIndex(where: { $0.label.hasPrefix("Type something") }) {
+            return (walk(to: i) + [text, "\r"], 0.15)
+        }
+        // permission dialogs don't, so back out with Esc and tell Claude once its input box is back
+        return ([esc, text + "\r"], 0.6)
+    }
 }
 
 func loadPatterns(_ text: String) -> [NSRegularExpression] {

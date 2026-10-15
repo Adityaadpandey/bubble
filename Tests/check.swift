@@ -6,17 +6,17 @@ import Foundation
         let pats = loadPatterns(defaultPatterns.joined(separator: "\n"))
         func d(_ s: String) -> Prompt? { detectPrompt(screen: s, patterns: pats) }
 
-        precondition(d("building...\nOverwrite config.json? [y/N] \n\n\n") == Prompt(kind: .yesNo, line: "Overwrite config.json? [y/N]"))
-        precondition(d("? Install dependencies? (Y/n)") == Prompt(kind: .yesNo, line: "? Install dependencies? (Y/n)"))
+        // CLI yes/no prompts
+        precondition(d("building...\nOverwrite config.json? [y/N] \n\n\n")?.line == "Overwrite config.json? [y/N]")
+        precondition(d("? Install dependencies? (Y/n)")?.kind == .yesNo)
         precondition(d("Are you sure you want to continue connecting (yes/no/[fingerprint])? ")?.kind == .yesNo)
-
         // already answered, or the prompt scrolled up and something else is printing now
         precondition(d("Overwrite config.json? [y/N] y") == nil)
         precondition(d("Overwrite config.json? [y/N] y\ncopying files") == nil)
         // secrets stay in the terminal
         precondition(d("Enter passphrase for key (y/n):") == nil)
 
-        // Claude Code dialog, boxed and unboxed styles
+        // Claude permission dialog, boxed style
         let boxed = """
         ╭──────────────────────────────╮
         │ Bash command                 │
@@ -27,33 +27,56 @@ import Foundation
         │   3. No (esc)                │
         ╰──────────────────────────────╯
         """
-        precondition(d(boxed) == Prompt(kind: .claude, line: "Do you want to proceed?",
-                                         options: ["Yes", "Yes, and don't ask again", "No (esc)"], cursor: 1))
-        let plain = "Edit file\n Do you want to make this edit to main.swift?\n   1. Yes\n ❯ 2. Yes, allow all edits\n   3. No\n\n"
-        precondition(d(plain)?.cursor == 2)
+        let perm = d(boxed)!
+        precondition(perm.kind == .menu && perm.line == "Do you want to proceed?" && perm.cursor == 0)
+        precondition(perm.rows.map(\.label) == ["Yes", "Yes, and don't ask again", "No (esc)"])
+        precondition(perm.context == ["Bash command", "npm install left-pad"])
+        precondition(d("Edit file\n Do you want to make this edit to main.swift?\n   1. Yes\n ❯ 2. Yes, allow all edits\n   3. No\n\n")?.cursor == 1)
 
-        // Claude asking a multiple choice question (captured from a real iTerm2 screen)
-        let question = """
-         ☐ Notifs
-        │ Turn on notifications for NotiApp. Done?
-        ❯ 1. Done, enabled
-             NotiApp notifications are on.
-          2. NotiApp isn't listed
-             Couldn't find NotiApp in the list.
-          3. Type something.
-        ─────────────────────────────
+        // Claude multi-question, multi-select (captured from a real iTerm2 screen, cursor on Next)
+        let multi = """
+        ⏺ Answer this one in the terminal, not the card.
+        ────────────────────────────────────────
+        ←  ☒ Alerts  ☐ Keyboard  ✔ Submit  →
+        Smarter alerts: which of these do you want?
+          1. [✔] Confirmation toast
+                 Card turns into a small 'Approved ✓' for a second.
+          2. [ ] Re-ping if ignored
+                 Sound again if a prompt is still unanswered after 2 minutes.
+          3. [ ] Type something
+        ❯    Next
+        ────────────────────────────────────────
           4. Chat about this
-
-        Enter to select · ↑/↓ to navigate · Esc to cancel
+        Enter to select · Tab/Arrow keys to navigate · Esc to cancel
         """
-        precondition(d(question) == Prompt(kind: .claude, line: "Turn on notifications for NotiApp. Done?",
-                                            options: ["Done, enabled", "NotiApp isn't listed", "Type something.", "Chat about this"], cursor: 1))
+        let m = d(multi)!
+        precondition(m.line == "Smarter alerts: which of these do you want?")
+        precondition(m.rows.map(\.label) == ["Confirmation toast", "Re-ping if ignored", "Type something", "Next", "Chat about this"])
+        precondition(m.rows.map(\.checked) == [true, false, false, nil, nil] && m.isMulti)
+        precondition(m.cursor == 3, "cursor sits on Next")
+        precondition(m.tabs == [QuestionTab(label: "Alerts", done: true), QuestionTab(label: "Keyboard", done: false), QuestionTab(label: "Submit", done: false)])
+        precondition(m.context.isEmpty, "the transcript above the divider is not context")
+
+        // single choice with the "☐ Notifs" chip
+        let single = "☐ Notifs\nTurn on notifications. Done?\n❯ 1. Done, enabled\n     Notifications are on.\n  2. Not listed\n  3. Type something.\n"
+        precondition(d(single)?.line == "Turn on notifications. Done?" && d(single)?.context == [])
 
         // Claude idle at its input box, or a numbered list in its answer, is not a prompt
         precondition(d("❯ \n  ? for shortcuts") == nil)
         precondition(d("Steps:\n1. Build it\n2. Run it\n❯ ") == nil)
+        precondition(d("❯ 1. but this is me typing into Claude's input box") == nil)
 
-        // whatever you type in Reply… must reach the terminal byte for byte, quotes and all
+        // answering: walk the cursor, toggle, reply into "Type something", tabs
+        precondition(keys(for: .pick(0), in: perm).keys == ["\r"])
+        precondition(keys(for: .pick(2), in: perm).keys == ["\u{1b}[B", "\u{1b}[B", "\r"])
+        precondition(keys(for: .pick(1), in: m).keys == ["\u{1b}[A", "\u{1b}[A", "\r"])
+        precondition(keys(for: .reply("hi"), in: m).keys == ["\u{1b}[A", "hi", "\r"])
+        precondition(keys(for: .reply("no, use pnpm"), in: perm) == (["\u{1b}", "no, use pnpm\r"], 0.6))
+        precondition(keys(for: .nextTab, in: m).keys == ["\u{1b}[C"])
+        let yn = d("Overwrite? [y/N]")!
+        precondition(keys(for: .yes, in: yn).keys == ["y\r"] && keys(for: .reply("maybe"), in: yn).keys == ["maybe\r"])
+
+        // whatever you type in Reply must reach the terminal byte for byte, quotes and all
         for text in ["plain", #"say "hi" \ there"#, "\u{1b}[B", "yes\r", "", #"" & do shell script "x" & ""#] {
             var err: NSDictionary?
             let back = NSAppleScript(source: "return \(appleScriptString(text))")?.executeAndReturnError(&err).stringValue

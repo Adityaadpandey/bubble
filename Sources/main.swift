@@ -1,12 +1,13 @@
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 let iTermID = "com.googlecode.iterm2"
 let hookNote = Notification.Name("dev.notiapp.hook")
 let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notiapp/patterns.txt")
 
 // Hook mode: Claude Code runs `NotiApp hook` with the event JSON on stdin.
-// We boil it down to one line, hand it to the running app and exit right away,
+// We boil it down to a few strings, hand them to the running app and exit right away,
 // so Claude never waits on us and shows its own prompt as usual.
 if CommandLine.arguments.dropFirst().first == "hook" {
     let data = FileHandle.standardInput.readDataToEndOfFile()
@@ -14,21 +15,41 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     // ITERM_SESSION_ID looks like "w0t5p0:3B3A957A-...", the part after the colon is iTerm2's session id
     guard let session = ProcessInfo.processInfo.environment["ITERM_SESSION_ID"]?.split(separator: ":").last else { exit(0) }
 
-    var info: [String: String] = [:]
+    // "- old line" / "+ new line", capped so a huge Write doesn't flood the card
+    func diffLines(_ text: Any?, _ sign: String) -> [String] {
+        ((text as? String) ?? "").components(separatedBy: .newlines).prefix(6).map { "\(sign) \($0)" }
+    }
+
+    var info: [String: String]
     switch obj["hook_event_name"] as? String {
     case "PermissionRequest":
-        // e.g. "Bash: npm install left-pad", shown as the body once the dialog appears on screen
+        let tool = obj["tool_name"] as? String ?? "Tool"
         let input = obj["tool_input"] as? [String: Any] ?? [:]
-        let detail = ["command", "file_path", "url", "pattern"].lazy.compactMap { input[$0] as? String }.first ?? ""
-        info = ["kind": "detail", "text": "\(obj["tool_name"] as? String ?? "Tool"): \(detail)"]
+        let path = input["file_path"] as? String ?? ""
+        var title = tool, body = "", diff: [String] = []
+        switch tool {
+        case "Bash":
+            body = "$ " + (input["command"] as? String ?? "")
+            if let what = input["description"] as? String { title = "Bash · \(what)" }
+        case "Edit":
+            title = "Edit · \((path as NSString).lastPathComponent)"
+            body = path
+            diff = diffLines(input["old_string"], "-") + diffLines(input["new_string"], "+")
+        case "Write":
+            title = "Write · \((path as NSString).lastPathComponent)"
+            body = path
+            diff = diffLines(input["content"], "+")
+        default:
+            body = ["command", "file_path", "url", "pattern", "query", "prompt"].lazy.compactMap { input[$0] as? String }.first ?? ""
+        }
+        info = ["kind": "detail", "title": title, "body": String(body.prefix(400)), "diff": diff.joined(separator: "\n")]
     case "Notification":
         let message = obj["message"] as? String ?? ""
         guard message.contains("waiting for your input") else { exit(0) } // permission ones are caught on screen
-        info = ["kind": "idle", "text": message]
+        info = ["kind": "idle", "body": message]
     default:
         exit(0)
     }
-    info["text"] = String(info["text"]!.prefix(200))
     DistributedNotificationCenter.default().postNotificationName(hookNote, object: String(session), userInfo: info, deliverImmediately: true)
     exit(0)
 }
@@ -36,10 +57,11 @@ if CommandLine.arguments.dropFirst().first == "hook" {
 struct Session { let id, name, tail: String }
 
 final class App: NSObject, NSApplicationDelegate {
-    struct Pending { let prompt: Prompt; let snapshot: String }
-
-    var pending: [String: Pending] = [:]       // one waiting prompt per iTerm2 session
-    var claudeDetail: [String: String] = [:]   // latest "Bash: npm install" per session, from the hook
+    var cards: [String: CardModel] = [:]      // one live card per iTerm2 session that's waiting on you
+    var panels: [String: CardPanel] = [:]
+    var order: [String] = []                  // oldest card on top, newer ones stack below it
+    var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
+    var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var patterns: [NSRegularExpression] = []
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let warning = NSMenuItem(title: "", action: #selector(openAutomationSettings), keyEquivalent: "")
@@ -75,22 +97,34 @@ final class App: NSObject, NSApplicationDelegate {
 
         for s in sessions {
             let found = detectPrompt(screen: s.tail, patterns: patterns)
-            if let p = pending[s.id] {
-                // answered in the terminal (or it moved on), so pull the stale card
-                if !stillThere(p, tail: s.tail, found: found) { clear(s.id) }
-                continue
+            if found == nil {
+                hidden.remove(s.id)
+                // the hook fires just before Claude draws its dialog, so give the detail a moment to find its prompt
+                if let d = details[s.id], Date().timeIntervalSince(d.at) > 5 { details[s.id] = nil }
             }
-            guard let found, !isLooking(at: s.id, front: front) else { continue }
-            pending[s.id] = Pending(prompt: found, snapshot: s.tail)
-            // the hook told us what Claude wants to run, e.g. "Bash: npm install left-pad"
-            let detail = found.kind == .claude ? claudeDetail.removeValue(forKey: s.id) : nil
-            show(s.id, title: s.name, detail: detail, prompt: found)
-        }
-    }
 
-    func stillThere(_ p: Pending, tail: String, found: Prompt?) -> Bool {
-        // Claude idle has nothing to match on, so "still waiting" means the screen hasn't changed at all
-        p.prompt.kind == .idle ? tail == p.snapshot : p.prompt.sameAs(found)
+            if let card = cards[s.id] {
+                if let found {
+                    // Live mirror: a ticked box, a moved cursor or the next question all land on the same card
+                    if found != card.prompt { card.prompt = found }
+                    card.snapshot = s.tail
+                } else if !(card.prompt.kind == .idle && s.tail == card.snapshot) {
+                    close(s.id) // answered, here or in the terminal
+                    continue
+                }
+                // Clicked but nothing changed on screen for a while, so let you try again
+                if card.sent != nil, Date().timeIntervalSince(card.sentAt) > 4 { card.sent = nil }
+                if !card.repinged, Date().timeIntervalSince(card.since) > 120 {
+                    card.repinged = true
+                    NSSound(named: "Glass")?.play()
+                }
+            } else if let found, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
+                open(s, found, detail: details.removeValue(forKey: s.id))
+            }
+        }
+        // tabs that were closed take their cards with them
+        for id in cards.keys where !sessions.contains(where: { $0.id == id }) { close(id) }
+        relayout()
     }
 
     // You count as looking if this exact tab is in front and you touched the keyboard or mouse in the last minute
@@ -100,96 +134,84 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     @objc func hook(_ note: Notification) {
-        guard let id = note.object as? String, let kind = note.userInfo?["kind"] as? String,
-              let text = note.userInfo?["text"] as? String else { return }
-        if kind == "detail" { claudeDetail[id] = text; return }
-
-        guard pending[id] == nil, let (front, sessions) = readSessions(),
+        guard let id = note.object as? String, let info = note.userInfo as? [String: String] else { return }
+        if info["kind"] == "detail" {
+            let d = Detail(title: info["title"] ?? "", body: info["body"] ?? "",
+                           diff: (info["diff"] ?? "").split(separator: "\n").map(String.init))
+            if let card = cards[id] { card.detail = d } else { details[id] = d }
+            return
+        }
+        // Claude finished and is sitting at its input box
+        guard cards[id] == nil, let (front, sessions) = readSessions(),
               let s = sessions.first(where: { $0.id == id }), !isLooking(at: id, front: front) else { return }
-        let prompt = Prompt(kind: .idle, line: text)
-        pending[id] = Pending(prompt: prompt, snapshot: s.tail)
-        show(id, title: s.name, detail: nil, prompt: prompt)
+        open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input"), detail: nil)
+        relayout()
     }
 
-    // MARK: popups
+    // MARK: cards
 
-    var panels: [String: PromptPanel] = [:]
-    var order: [String] = [] // oldest card on top, newer ones stack below it
-
-    func show(_ id: String, title: String, detail: String?, prompt: Prompt) {
-        let choices: [Choice]
-        switch prompt.kind {
-        case .claude:
-            // a button per menu choice, e.g. "1. Yes" / "2. Yes, and don't ask again" / "3. No".
-            // Claude's own "Type something." and "Chat about this" are what the Reply box is for.
-            choices = prompt.options.enumerated()
-                .filter { !["Type something.", "Chat about this"].contains($0.element) }
-                .map { Choice(id: "opt-\($0.offset + 1)", label: "\($0.offset + 1). \($0.element)") }
-        case .yesNo:
-            choices = [Choice(id: "approve", label: "Yes"), Choice(id: "deny", label: "No")]
-        case .idle:
-            choices = []
-        }
-        dismiss(id)
-        let card = PromptCard(title: title, detail: detail, question: prompt.line.isEmpty ? "Waiting for you" : prompt.line,
-                              choices: choices) { [weak self] action, text in
-            DispatchQueue.main.async { self?.handle(id, action, text) } // let the button finish before its card closes
-        }
-        let panel = PromptPanel(card)
+    func open(_ s: Session, _ prompt: Prompt, detail: Detail?) {
+        let card = CardModel(session: s.id, title: s.name, prompt: prompt, detail: detail)
+        card.snapshot = s.tail
+        let id = s.id
+        let panel = CardPanel(CardView(model: card) { [weak self] action in
+            DispatchQueue.main.async { self?.handle(id, action) } // let the button finish before its card changes
+        })
+        cards[id] = card
         panels[id] = panel
         order.append(id)
-        layout()
+        relayout()
         panel.orderFrontRegardless()
         NSSound(named: "Glass")?.play()
     }
 
-    func layout() {
+    func relayout() {
         guard let screen = NSScreen.main?.visibleFrame else { return }
         var top = screen.maxY - 12
         for id in order {
-            guard let p = panels[id] else { continue }
-            p.setFrameOrigin(NSPoint(x: screen.maxX - p.frame.width - 12, y: top - p.frame.height))
-            top -= p.frame.height + 10
+            guard let panel = panels[id] else { continue }
+            panel.fit()
+            panel.setFrameOrigin(NSPoint(x: screen.maxX - panel.frame.width - 12, y: top - panel.frame.height))
+            top -= panel.frame.height + 10
         }
     }
 
-    // Hides the card but keeps the prompt pending, so ✕ doesn't make it pop right back up
-    func dismiss(_ id: String) {
+    func close(_ id: String) {
+        cards[id] = nil
         panels.removeValue(forKey: id)?.close()
         order.removeAll { $0 == id }
-        layout()
+        relayout()
     }
 
-    func clear(_ id: String) {
-        pending[id] = nil
-        dismiss(id)
-    }
-
-    func handle(_ id: String, _ action: String, _ text: String) {
-        if action == "close" { return dismiss(id) }
-        if action == "open" { dismiss(id); return focus(id) }
-        guard let p = pending[id] else { return }
-        clear(id)
-
-        // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-        guard let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
-        let now = detectPrompt(screen: s.tail, patterns: patterns)
-        guard stillThere(p, tail: s.tail, found: now) else { return }
-
-        let down = "\u{1b}[B", up = "\u{1b}[A"
+    func handle(_ id: String, _ action: CardAction) {
         switch action {
-        case let a where a.hasPrefix("opt-"):
-            // walk the ❯ from wherever it is now to the chosen option, then Enter
-            let n = Int(a.dropFirst(4)) ?? 1, cursor = now?.cursor ?? 1
-            press(id, Array(repeating: n > cursor ? down : up, count: abs(n - cursor)) + ["\r"])
-        case "approve": press(id, ["y\r"])
-        case "deny": press(id, ["n\r"])
-        case "reply" where p.prompt.kind == .claude:
-            // back out of the menu, then give Claude your note once its input box is back
-            press(id, ["\u{1b}", text + "\r"], gap: 0.6)
-        case "reply": press(id, [text + "\r"])
-        default: break
+        case .close:
+            hidden.insert(id)
+            close(id)
+        case .open:
+            hidden.insert(id)
+            close(id)
+            focus(id)
+        case .answer(let a):
+            answer(id, a)
         }
+    }
+
+    func answer(_ id: String, _ a: Answer) {
+        guard let card = cards[id], let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
+        // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
+        let now = detectPrompt(screen: s.tail, patterns: patterns)
+        if card.prompt.kind == .idle {
+            guard s.tail == card.snapshot else { return close(id) }
+        } else {
+            guard let now, now.kind == card.prompt.kind, now.line == card.prompt.line else { return close(id) }
+            card.prompt = now // fresh cursor position, in case you moved it in the terminal meanwhile
+        }
+        let (keys, gap) = keys(for: a, in: card.prompt)
+        press(id, keys, gap: gap)
+        // dim the card with a "Sent" badge until the screen moves on, so it never looks like it's asking again
+        card.sent = card.prompt
+        card.sentAt = Date()
     }
 
     // MARK: iTerm2 via AppleScript
@@ -209,7 +231,7 @@ final class App: NSObject, NSApplicationDelegate {
                     repeat with s in sessions of t
                         set c to contents of s
                         set n to count of paragraphs of c
-                        if n > 40 then set n to 40
+                        if n > 50 then set n to 50
                         set tailText to ""
                         if n > 0 then set tailText to (paragraphs -n thru -1 of c) as text
                         set end of out to {unique id of s, name of s, tailText}
@@ -229,7 +251,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     // Sends each chunk as its own keypress, a little apart, so TUIs like Claude don't see
     // "↓ ↓ Enter" glued together as one unknown key
-    func press(_ id: String, _ keys: [String], gap: Double = 0.15) {
+    func press(_ id: String, _ keys: [String], gap: Double) {
         for (i, key) in keys.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + gap * Double(i)) {
                 self.onSession(id, "tell s to write text \(appleScriptString(key)) newline NO")

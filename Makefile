@@ -12,7 +12,7 @@ check:
 	build/check
 
 install: build
-	pkill -x NotiApp || true
+	pkill -x NotiApp && sleep 1 || true
 	rm -rf ~/Applications/NotiApp.app
 	cp -R $(APP) ~/Applications/
 	open ~/Applications/NotiApp.app
