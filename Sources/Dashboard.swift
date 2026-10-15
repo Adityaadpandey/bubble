@@ -52,17 +52,17 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Connect Claude Code", systemImage: "link")
                         Text("Shows the diff or command on each card, and pings you when Claude is done")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(.notchy(11)).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain).foregroundStyle(Color.accentColor).padding(12)
+                .buttonStyle(.plain).foregroundStyle(Look.accent).padding(12)
                 Divider()
             }
 
             if busy.isEmpty {
                 Label("Nothing needs you", systemImage: "checkmark.circle")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.notchy(12)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 ScrollView {
@@ -114,7 +114,7 @@ struct DashboardView: View {
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
             .buttonStyle(.borderless)
-            .font(.system(size: 12))
+            .font(.notchy(12))
             .padding(10)
         }
         .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
@@ -131,8 +131,8 @@ struct TabRow: View {
             HStack(spacing: 10) {
                 Circle().fill(tab.state == .waiting ? Color.orange : .blue).frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                    Text(tab.note).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(tab.name).font(.notchy(12.5, weight: .medium)).lineLimit(1)
+                    Text(tab.note).font(.notchy(11)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
             }
@@ -154,14 +154,14 @@ struct UsageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(usage.id).font(.system(size: 12, weight: .semibold))
+                Text(usage.id).font(.notchy(12, weight: .semibold))
                 if let plan = usage.plan {
-                    Text(plan).font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    Text(plan).font(.notchy(10, weight: .medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background(Capsule().fill(Color.primary.opacity(0.08)))
                 }
                 Spacer()
-                if let e = usage.error { Text(e).font(.system(size: 11)).foregroundStyle(.secondary) }
+                if let e = usage.error { Text(e).font(.notchy(11)).foregroundStyle(.secondary) }
             }
             ForEach(usage.limits, id: \.label) { l in
                 HStack(spacing: 8) {
@@ -175,7 +175,7 @@ struct UsageRow: View {
                     Text("\(Int((l.used * 100).rounded()))%").monospacedDigit().frame(width: 34, alignment: .trailing)
                     Text(l.resetsAt.map { "resets " + short($0) } ?? "").foregroundStyle(.tertiary).frame(width: 64, alignment: .leading)
                 }
-                .font(.system(size: 11))
+                .font(.notchy(11))
                 .accessibilityElement(children: .combine)
             }
         }

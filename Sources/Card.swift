@@ -112,7 +112,7 @@ struct CardView: View {
             if !p.tabs.isEmpty { tabStrip }
             context
             Text(p.line.isEmpty ? "Waiting for you" : p.line)
-                .font(.system(size: 14.5, weight: .semibold))
+                .font(.notchy(14.5, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
             if !visibleRows.isEmpty {
                 VStack(spacing: 6) {
@@ -136,16 +136,16 @@ struct CardView: View {
             }
             if model.failed {
                 Label("Couldn't type that into the terminal. Try again, or open the tab.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12)).foregroundStyle(.red)
+                    .font(.notchy(12)).foregroundStyle(.red)
             }
             replyBox
             if model.keyboard { keyboardHint }
         }
-        .padding(14)
+        .padding(Look.padding)
         .disabled(model.waitingOnSend)
         .opacity(model.waitingOnSend ? 0.55 : 1)
         .overlay(alignment: .top) { if model.waitingOnSend { sentBadge } }
-        .modifier(NotchChrome(docked: model.docked, notch: model.notch, leaving: model.leaving, outline: model.keyboard ? .accentColor : nil))
+        .modifier(NotchChrome(docked: model.docked, notch: model.notch, leaving: model.leaving, outline: model.keyboard ? Look.accent : nil))
         .animation(.easeOut(duration: 0.15), value: model.waitingOnSend)
         .focusable()
         .focusEffectDisabled()
@@ -180,9 +180,9 @@ struct CardView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: isClaude ? "sparkle" : "terminal")
-                .font(.system(size: 11, weight: .bold))
+                .font(.notchy(11, weight: .bold))
                 .foregroundStyle(isClaude ? Color.orange : .secondary)
-            Text(model.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            Text(model.title).font(.notchy(12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
             iconButton("arrow.up.forward.app", help: "Open the tab") { act(.open) }
             iconButton("xmark", help: "Hide this card, the prompt stays in the terminal") { act(.close) }
@@ -191,7 +191,7 @@ struct CardView: View {
 
     private func iconButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.notchy(11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
         .help(help).accessibilityLabel(help)
@@ -203,10 +203,10 @@ struct CardView: View {
             Button { act(.answer(.prevTab)) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
             ForEach(p.tabs, id: \.label) { t in
                 HStack(spacing: 3) {
-                    if t.done { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
+                    if t.done { Image(systemName: "checkmark").font(.notchy(9, weight: .bold)) }
                     Text(t.label).lineLimit(1)
                 }
-                .font(.system(size: 11, weight: .medium))
+                .font(.notchy(11, weight: .medium))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(t.done ? Color.green.opacity(0.18) : Color.primary.opacity(0.07)))
                 .foregroundStyle(t.done ? Color.green : .secondary)
@@ -221,11 +221,11 @@ struct CardView: View {
         if model.detail != nil || !lines.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 if let d = model.detail {
-                    Text(d.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, 2)
+                    Text(d.title).font(.notchy(11, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, 2)
                 }
                 ForEach(Array(lines.prefix(14).enumerated()), id: \.offset) { _, l in
                     Text(l)
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(.notchy(11.5, design: .monospaced))
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
@@ -247,10 +247,10 @@ struct CardView: View {
                 .onSubmit(send)
                 .onKeyPress(.escape) { act(.release); return .handled }
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 20))
+                Image(systemName: "arrow.up.circle.fill").font(.notchy(20))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(reply.isEmpty ? Color.secondary : Color.accentColor)
+            .foregroundStyle(reply.isEmpty ? Color.secondary : Look.accent)
             .disabled(reply.isEmpty)
             .accessibilityLabel("Send reply")
         }
@@ -260,12 +260,12 @@ struct CardView: View {
 
     private var keyboardHint: some View {
         Text("1–9 pick · Y/N · ←/→ questions · Tab reply · Esc hide")
-            .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            .font(.notchy(10.5)).foregroundStyle(.tertiary)
     }
 
     private var sentBadge: some View {
         Label("Sent", systemImage: "checkmark.circle.fill")
-            .font(.system(size: 12, weight: .semibold))
+            .font(.notchy(12, weight: .semibold))
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Capsule().fill(Color.green))
             .foregroundStyle(.white)
@@ -299,13 +299,13 @@ struct RowButton: View {
             HStack(spacing: 10) {
                 if showKey {
                     Text("\(number)")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.notchy(11, weight: .semibold, design: .rounded))
                         .frame(width: 20, height: 20)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.accentColor.opacity(0.25)))
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Look.accent.opacity(0.25)))
                 }
                 if let checked = row.checked {
                     Image(systemName: checked ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(checked ? Color.accentColor : .secondary)
+                        .foregroundStyle(checked ? Look.accent : .secondary)
                 }
                 // Claude's key hints like "(esc)" mean nothing on a card
                 Text(row.label.replacingOccurrences(of: #"\s*\((esc|shift\+tab|tab)\)$"#, with: "", options: .regularExpression))
@@ -313,13 +313,13 @@ struct RowButton: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 13))
+            .font(.notchy(13))
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.primary.opacity(hover ? 0.12 : 0.05)))
             // outline = where the ❯ is in the terminal right now
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(isCursor ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5))
+                .strokeBorder(isCursor ? Look.accent.opacity(0.6) : .clear, lineWidth: 1.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -376,7 +376,7 @@ struct NotchChrome: ViewModifier {
         let w = folded.width + (max(size.width, folded.width) - folded.width) * grow
         let h = folded.height + (max(size.height, folded.height) - folded.height) * grow
         let shape = NotchShape(ears: docked, radius: 10 + 16 * min(grow, 1))
-        return ClampWidth(min: 510, max: 720) {
+        return ClampWidth(min: Look.width.lowerBound, max: Look.width.upperBound) {
             content
                 // clear the notch, but the content's own padding already leaves a gap under it, so take 8 off
                 // rather than stacking both: 32pt notch + 14pt padding read as a big empty band
