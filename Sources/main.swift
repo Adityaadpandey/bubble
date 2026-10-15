@@ -54,6 +54,20 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     exit(0)
 }
 
+// ~/Library/Logs/NotiApp.log, one line per card opened or closed and per answer sent, e.g.
+//   2026-10-15T19:07:12Z answer 3B3A… pick(1) keys ["\u{1B}[B", "\r"] trusted card: false
+let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/NotiApp.log")
+func log(_ message: String) {
+    let line = "\(Date().formatted(.iso8601)) \(message)\n"
+    guard let h = try? FileHandle(forWritingTo: logURL) else {
+        try? line.write(to: logURL, atomically: true, encoding: .utf8)
+        return
+    }
+    h.seekToEndOfFile()
+    h.write(Data(line.utf8))
+    try? h.close()
+}
+
 final class App: NSObject, NSApplicationDelegate {
     var cards: [String: CardModel] = [:]      // one live card per iTerm2 session that's waiting on you
     var panels: [String: CardPanel] = [:]
@@ -62,6 +76,7 @@ final class App: NSObject, NSApplicationDelegate {
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var changed: [String: (tail: String, at: Date)] = [:] // when each tab's screen last changed
     var inFlight: [String: Int] = [:]         // answers whose keys haven't all landed yet
+    var typedAt: [String: Date] = [:]         // when our last keys finished landing in each tab
     var known: [String: Session] = [:]        // every tab as of the last read
     var front = ""                            // the tab in front in iTerm2
     var reading = false
@@ -97,6 +112,24 @@ final class App: NSObject, NSApplicationDelegate {
         }
 
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(hook(_:)), name: hookNote, object: nil)
+        #if DEBUG
+        // Test builds only (make debug): lets a script click cards. Never in a normal build, since any app
+        // on the Mac could post this and type into your terminal.
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.notiapp.debug"), object: nil, queue: .main) { [weak self] n in
+            guard let self, let id = n.object as? String, let what = n.userInfo?["do"] as? String else { return }
+            if self.cards[id] == nil { self.pick(id) }
+            let parts = what.split(separator: ":", maxSplits: 1).map(String.init)
+            let a: Answer? = switch parts[0] {
+            case "pick": .pick(Int(parts[1]) ?? 0)
+            case "reply": .reply(parts[1])
+            case "next": .nextTab
+            case "submit": .submit
+            default: nil
+            }
+            log("debug \(id) \(what)")
+            if let a { self.answer(id, a) }
+        }
+        #endif
         try? SMAppService.mainApp.register() // start at login
         hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
@@ -110,13 +143,14 @@ final class App: NSObject, NSApplicationDelegate {
         reading = true
         // ponytail: re-reads a tiny file every tick, cache by mtime if it ever shows up in a profile
         patterns = loadPatterns((try? String(contentsOf: patternsFile, encoding: .utf8)) ?? "")
+        let started = Date()
         iterm.readAll { [weak self] result in
             self?.reading = false
-            if let result { self?.apply(front: result.front, sessions: result.sessions) }
+            if let result { self?.apply(front: result.front, sessions: result.sessions, readAt: started) }
         }
     }
 
-    func apply(front: String, sessions: [Session]) {
+    func apply(front: String, sessions: [Session], readAt: Date) {
         self.front = front
         known = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var tabs: [TabStatus] = []
@@ -142,13 +176,19 @@ final class App: NSObject, NSApplicationDelegate {
             if let card = cards[s.id] {
                 if card.failed, card.prompt != found { card.failed = false } // something got through after all
                 // mid-walk the screen shows the cursor halfway there, don't mirror that
-                if inFlight[s.id, default: 0] > 0 { continue }
+                // A read takes ~0.5s, so one that started before our keys landed shows the old screen.
+                // Mirroring it would flash your ticks away for a moment.
+                // Claude also needs a moment to redraw after the keys arrive, hence the extra 0.4s.
+                if inFlight[s.id, default: 0] > 0 || (typedAt[s.id] ?? .distantPast).addingTimeInterval(0.4) > readAt { continue }
                 if let found {
                     // Live mirror: a ticked box, a moved cursor or the next question all land on the same card
-                    if found != card.prompt { card.prompt = found }
+                    if found != card.prompt {
+                        log("mirror \(s.id) \(found.line.prefix(40).debugDescription) ticks \(found.rows.compactMap(\.checked)) cursor \(found.cursor)")
+                        card.prompt = found
+                    }
                     card.snapshot = s.tail
                 } else if !(card.prompt.kind == .idle && s.tail == card.snapshot) {
-                    close(s.id) // answered, here or in the terminal
+                    close(s.id, "prompt gone from screen") // answered, here or in the terminal
                     continue
                 }
                 // Clicked but nothing changed on screen for a while, so let you try again
@@ -164,7 +204,7 @@ final class App: NSObject, NSApplicationDelegate {
             }
         }
         // tabs that were closed take their cards with them
-        for id in cards.keys where !sessions.contains(where: { $0.id == id }) { close(id) }
+        for id in cards.keys where !sessions.contains(where: { $0.id == id }) { close(id, "tab closed") }
         relayout()
         // waiting ones first, then working, then idle
         tabs.sort { rank($0.state) < rank($1.state) }
@@ -232,6 +272,7 @@ final class App: NSObject, NSApplicationDelegate {
     // MARK: cards
 
     func open(_ s: Session, _ prompt: Prompt, detail: Detail?) {
+        log("open \(s.id) \(prompt.kind) \(prompt.line.debugDescription) rows \(prompt.rows.map(\.label)) cursor \(prompt.cursor)")
         let card = CardModel(session: s.id, title: s.name, prompt: prompt, detail: detail)
         card.snapshot = s.tail
         let id = s.id
@@ -257,7 +298,8 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
-    func close(_ id: String) {
+    func close(_ id: String, _ why: String) {
+        if cards[id] != nil { log("close \(id) \(why)") }
         cards[id] = nil
         panels.removeValue(forKey: id)?.close()
         order.removeAll { $0 == id }
@@ -268,10 +310,10 @@ final class App: NSObject, NSApplicationDelegate {
         switch action {
         case .close:
             hidden.insert(id)
-            close(id)
+            close(id, "you hid it")
         case .open:
             hidden.insert(id)
-            close(id)
+            close(id, "opened in iTerm2")
             focus(id)
         case .release:
             release(id)
@@ -323,14 +365,17 @@ final class App: NSObject, NSApplicationDelegate {
                 let now = detectPrompt(screen: tail, patterns: pats, quietFor: .infinity)
                 let still = expected.kind == .idle ? tail == snapshot : now.map { $0.kind == expected.kind && $0.line == expected.line } ?? false
                 guard still else {
-                    return DispatchQueue.main.async { self.inFlight[id, default: 1] -= 1; self.close(id) }
+                    log("answer \(id) \(a) dropped, screen now shows \(String(describing: now))")
+                    return DispatchQueue.main.async { self.inFlight[id, default: 1] -= 1; self.close(id, "prompt changed before the click landed") }
                 }
                 if expected.kind != .idle, let now { prompt = now } // fresh cursor, in case you moved it in the terminal
             }
             let (keys, gap) = keys(for: a, in: prompt)
             let ok = iterm.send(where_, keys, gap: gap)
+            log("answer \(id) \(a) cursor \(prompt.cursor) keys \(keys) trusted card: \(trustCard) sent: \(ok)")
             DispatchQueue.main.async {
                 self.inFlight[id, default: 1] -= 1
+                self.typedAt[id] = Date()
                 if !ok, let card = self.cards[id] {
                     // undo the optimistic tick or Sent badge and say so, instead of pretending it worked
                     card.prompt = expected

@@ -3,8 +3,12 @@ APP = build/NotiApp.app
 build:
 	mkdir -p $(APP)/Contents/MacOS
 	cp Info.plist $(APP)/Contents/
-	swiftc -O Sources/*.swift -o $(APP)/Contents/MacOS/NotiApp
+	swiftc -O $(SWIFTFLAGS) Sources/*.swift -o $(APP)/Contents/MacOS/NotiApp
 	codesign --force --sign - $(APP)
+
+# same as install, plus a test-only hook scripts can use to click cards
+debug: SWIFTFLAGS = -D DEBUG
+debug: install
 
 check:
 	mkdir -p build
@@ -17,4 +21,4 @@ install: build
 	cp -R $(APP) ~/Applications/
 	open ~/Applications/NotiApp.app
 
-.PHONY: build check install
+.PHONY: build check install debug
