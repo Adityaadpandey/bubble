@@ -40,7 +40,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if model.accessDenied {
                 Button(action: openSettings) {
-                    Label("Allow Notchy to control iTerm2…", systemImage: "exclamationmark.triangle.fill")
+                    Label("Allow Notchy to control your terminal…", systemImage: "exclamationmark.triangle.fill")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain).foregroundStyle(.orange).padding(12)

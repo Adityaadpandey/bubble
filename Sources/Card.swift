@@ -11,7 +11,7 @@ struct Detail {
 
 enum CardAction { case answer(Answer), open, close, release }
 
-// One live card per iTerm2 tab. App rewrites `prompt` every tick from the screen,
+// One live card per terminal tab. App rewrites `prompt` every tick from the screen,
 // so ticking a box or moving to the next question updates this card instead of making a new one.
 final class CardModel: ObservableObject {
     let session: String
@@ -21,7 +21,7 @@ final class CardModel: ObservableObject {
     @Published var detail: Detail?
     @Published var sent: Prompt?  // what we last answered, the card dims until the screen moves on
     @Published var keyboard = false // focused with ⌃⌥Space
-    @Published var failed = false   // the last answer couldn't be typed into iTerm2
+    @Published var failed = false   // the last answer couldn't be typed into the terminal
     @Published var docked = false   // the top card, hanging from the notch
     @Published var notch = CGSize.zero // the notch's size, so nothing hides behind it and cards can grow out of it
     @Published var leaving = false  // folding back into the notch before the window goes away
@@ -135,7 +135,7 @@ struct CardView: View {
                 .buttonStyle(.borderedProminent).controlSize(.large)
             }
             if model.failed {
-                Label("Couldn't type into iTerm2. Try again, or open the tab.", systemImage: "exclamationmark.triangle.fill")
+                Label("Couldn't type that into the terminal. Try again, or open the tab.", systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12)).foregroundStyle(.red)
             }
             replyBox
@@ -184,7 +184,7 @@ struct CardView: View {
                 .foregroundStyle(isClaude ? Color.orange : .secondary)
             Text(model.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
-            iconButton("arrow.up.forward.app", help: "Open in iTerm2") { act(.open) }
+            iconButton("arrow.up.forward.app", help: "Open the tab") { act(.open) }
             iconButton("xmark", help: "Hide this card, the prompt stays in the terminal") { act(.close) }
         }
     }

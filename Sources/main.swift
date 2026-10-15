@@ -13,8 +13,10 @@ let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPath
 if CommandLine.arguments.dropFirst().first == "hook" {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-    // ITERM_SESSION_ID looks like "w0t5p0:3B3A957A-...", the part after the colon is iTerm2's session id
-    guard let session = ProcessInfo.processInfo.environment["ITERM_SESSION_ID"]?.split(separator: ":").last else { exit(0) }
+    // ITERM_SESSION_ID looks like "w0t5p0:3B3A957A-...", the part after the colon is iTerm2's session id.
+    // Terminal has nothing like it, but every tab has its own tty, which this hook shares with the tab it runs in.
+    guard let session = ProcessInfo.processInfo.environment["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init)
+            ?? controllingTTY() else { exit(0) }
 
     // "- old line" / "+ new line", capped so a huge Write doesn't flood the card
     func diffLines(_ text: Any?, _ sign: String) -> [String] {
@@ -51,8 +53,17 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     default:
         exit(0)
     }
-    DistributedNotificationCenter.default().postNotificationName(hookNote, object: String(session), userInfo: info, deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(hookNote, object: session, userInfo: info, deliverImmediately: true)
     exit(0)
+}
+
+// e.g. "/dev/ttys019", or nil when this process isn't attached to a terminal
+func controllingTTY() -> String? {
+    var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, info.kp_eproc.e_tdev != -1,
+          let name = devname(info.kp_eproc.e_tdev, S_IFCHR) else { return nil }
+    return "/dev/" + String(cString: name)
 }
 
 // ~/Library/Logs/Notchy.log, one line per card opened or closed and per answer sent, e.g.
@@ -70,7 +81,7 @@ func log(_ message: String) {
 }
 
 final class App: NSObject, NSApplicationDelegate {
-    var cards: [String: CardModel] = [:]      // one live card per iTerm2 session that's waiting on you
+    var cards: [String: CardModel] = [:]      // one live card per terminal tab that's waiting on you
     var panels: [String: CardPanel] = [:]
     var order: [String] = []                  // oldest card on top, newer ones stack below it
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
@@ -79,9 +90,9 @@ final class App: NSObject, NSApplicationDelegate {
     var inFlight: [String: Int] = [:]         // answers whose keys haven't all landed yet
     var typedAt: [String: Date] = [:]         // when our last keys finished landing in each tab
     var known: [String: Session] = [:]        // every tab as of the last read
-    var front = ""                            // the tab in front in iTerm2
+    var fronts: [String] = []                 // the tab in front in iTerm2 and in Terminal
     var reading = false
-    let iterm = ITerm()
+    let terminals = Terminals()
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -103,7 +114,7 @@ final class App: NSObject, NSApplicationDelegate {
         makeNotchButton()
         Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.checkHover() }
         dashSub = dashboard.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.placeDashboard() } }
-        iterm.onDenied = { [weak self] denied in
+        terminals.onDenied = { [weak self] denied in
             guard let self, self.dashboard.accessDenied != denied else { return }
             self.dashboard.accessDenied = denied
             self.updateIcon()
@@ -118,7 +129,7 @@ final class App: NSObject, NSApplicationDelegate {
             }
         }
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
-            let header = "# One regex per line, matched against the last line of each iTerm2 tab.\n# It only fires if nothing was typed after the match.\n"
+            let header = "# One regex per line, matched against the last line of each terminal tab.\n# It only fires if nothing was typed after the match.\n"
             try? (header + defaultPatterns.joined(separator: "\n") + "\n").write(to: patternsFile, atomically: true, encoding: .utf8)
         }
 
@@ -164,14 +175,14 @@ final class App: NSObject, NSApplicationDelegate {
         // ponytail: re-reads a tiny file every tick, cache by mtime if it ever shows up in a profile
         patterns = loadPatterns((try? String(contentsOf: patternsFile, encoding: .utf8)) ?? "")
         let started = Date()
-        iterm.readAll { [weak self] result in
+        terminals.readAll { [weak self] result in
             self?.reading = false
-            if let result { self?.apply(front: result.front, sessions: result.sessions, readAt: started) }
+            if let result { self?.apply(fronts: result.fronts, sessions: result.sessions, readAt: started) }
         }
     }
 
-    func apply(front: String, sessions: [Session], readAt: Date) {
-        self.front = front
+    func apply(fronts: [String], sessions: [Session], readAt: Date) {
+        self.fronts = fronts
         known = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var tabs: [TabStatus] = []
 
@@ -220,7 +231,7 @@ final class App: NSObject, NSApplicationDelegate {
                     NSSound(named: "Glass")?.play()
                     panels[s.id].map(shake)
                 }
-            } else if let found, !typing, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
+            } else if let found, !typing, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id) {
                 open(s, found, detail: details.removeValue(forKey: s.id))
             }
         }
@@ -378,9 +389,9 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     // You count as looking if this exact tab is in front and you touched the keyboard or mouse in the last minute
-    func isLooking(at id: String, front: String) -> Bool {
+    func isLooking(at id: String) -> Bool {
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ITerm.bundleID && front == id && idle < 60
+        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Terminals.app(of: id) && fronts.contains(id) && idle < 60
     }
 
     @objc func hook(_ note: Notification) {
@@ -392,7 +403,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         // Claude finished and is sitting at its input box
-        guard cards[id] == nil, !dashboard.paused, let s = known[id], !isLooking(at: id, front: front) else { return }
+        guard cards[id] == nil, !dashboard.paused, let s = known[id], !isLooking(at: id) else { return }
         open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input"), detail: nil)
         relayout()
     }
@@ -458,7 +469,7 @@ final class App: NSObject, NSApplicationDelegate {
             close(id, "you hid it")
         case .open:
             hidden.insert(id)
-            close(id, "opened in iTerm2")
+            close(id, "opened in its terminal")
             focus(id)
         case .release:
             release(id)
@@ -506,11 +517,11 @@ final class App: NSObject, NSApplicationDelegate {
         }
 
         inFlight[id, default: 0] += 1
-        iterm.queue.async { [self] in
+        terminals.queue.async { [self] in
             var prompt = expected
             if !trustCard {
                 // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-                let tail = iterm.readTail(where_)
+                let tail = terminals.readTail(where_)
                 let now = detectPrompt(screen: tail, patterns: pats, quietFor: .infinity)
                 let still = expected.kind == .idle ? tail == snapshot : now.map { $0.kind == expected.kind && $0.line == expected.line } ?? false
                 guard still else {
@@ -519,8 +530,10 @@ final class App: NSObject, NSApplicationDelegate {
                 }
                 if expected.kind != .idle, let now { prompt = now } // fresh cursor, in case you moved it in the terminal
             }
-            let (keys, gap) = keys(for: a, in: prompt)
-            let ok = iterm.send(where_, keys, gap: gap)
+            // Terminal types a whole line at a time, and an answer that can't be one comes back empty and fails
+            let (keys, gap) = Terminals.app(of: id) == Terminals.terminal
+                ? (terminalLine(for: a, in: prompt).map { [$0] } ?? [], 0) : keys(for: a, in: prompt)
+            let ok = terminals.send(where_, keys, gap: gap)
             log("answer \(id) \(a) cursor \(prompt.cursor) keys \(keys) trusted card: \(trustCard) sent: \(ok)")
 
             // Watch just this tab (~30ms a look, vs ~500ms to read every tab) until Claude has redrawn:
@@ -528,7 +541,7 @@ final class App: NSObject, NSApplicationDelegate {
             var fresh: (tail: String, prompt: Prompt?)?
             var last: Prompt?? = .none
             for _ in 0..<25 where ok {
-                let tail = iterm.readTail(where_)
+                let tail = terminals.readTail(where_)
                 let now = detectPrompt(screen: tail, patterns: pats, quietFor: .infinity)
                 if now != prompt, case .some(let previous) = last, previous == now { fresh = (tail, now); break }
                 last = .some(now)
@@ -562,7 +575,7 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     func focus(_ id: String) {
-        known[id].map(iterm.focus)
+        known[id].map(terminals.focus)
     }
 
     func openAutomationSettings() {

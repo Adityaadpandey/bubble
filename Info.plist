@@ -25,6 +25,6 @@
     <key>NSHumanReadableCopyright</key>
     <string>Lives in your notch and answers your terminal.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Notchy reads your iTerm2 tabs to spot prompts waiting on you, and types your answer back into them.</string>
+    <string>Notchy reads your iTerm2 and Terminal tabs to spot prompts waiting on you, and types your answer back into them.</string>
 </dict>
 </plist>
