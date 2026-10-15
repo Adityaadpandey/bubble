@@ -64,6 +64,7 @@ final class App: NSObject, NSApplicationDelegate {
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var changed: [String: (tail: String, at: Date)] = [:] // when each tab's screen last changed
+    var typingUntil: [String: Date] = [:]     // keys still on their way into a tab
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -122,6 +123,8 @@ final class App: NSObject, NSApplicationDelegate {
             }
 
             if let card = cards[s.id] {
+                // mid-walk the screen shows the cursor halfway there, don't mirror that
+                if typing(s.id) { continue }
                 if let found {
                     // Live mirror: a ticked box, a moved cursor or the next question all land on the same card
                     if found != card.prompt { card.prompt = found }
@@ -277,21 +280,34 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
     }
 
+    func typing(_ id: String) -> Bool { (typingUntil[id] ?? .distantPast) > Date() }
+
     func answer(_ id: String, _ a: Answer) {
-        guard let card = cards[id], let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
+        guard let card = cards[id] else { return }
         // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-        let now = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity)
-        if card.prompt.kind == .idle {
-            guard s.tail == card.snapshot else { return close(id) }
-        } else {
-            guard let now, now.kind == card.prompt.kind, now.line == card.prompt.line else { return close(id) }
-            card.prompt = now // fresh cursor position, in case you moved it in the terminal meanwhile
+        // While our own keys are still landing the screen is half updated, so trust the card instead.
+        if !typing(id) {
+            guard let s = readSessions()?.1.first(where: { $0.id == id }) else { return }
+            let now = detectPrompt(screen: s.tail, patterns: patterns, quietFor: .infinity)
+            if card.prompt.kind == .idle {
+                guard s.tail == card.snapshot else { return close(id) }
+            } else {
+                guard let now, now.kind == card.prompt.kind, now.line == card.prompt.line else { return close(id) }
+                card.prompt = now // fresh cursor position, in case you moved it in the terminal meanwhile
+            }
         }
         let (keys, gap) = keys(for: a, in: card.prompt)
         press(id, keys, gap: gap)
-        // dim the card with a "Sent" badge until the screen moves on, so it never looks like it's asking again
-        card.sent = card.prompt
-        card.sentAt = Date()
+
+        if case .pick(let i) = a, card.prompt.rows[i].checked != nil {
+            // ticking a box: show it right away and keep the card live, you're probably ticking another
+            card.prompt.rows[i].checked?.toggle()
+            card.prompt.cursor = i
+        } else {
+            // dim the card with a "Sent" badge until the screen moves on, so it never looks like it's asking again
+            card.sent = card.prompt
+            card.sentAt = Date()
+        }
     }
 
     // MARK: iTerm2 via AppleScript
@@ -331,12 +347,18 @@ final class App: NSObject, NSApplicationDelegate {
 
     // Sends each chunk as its own keypress, a little apart, so TUIs like Claude don't see
     // "↓ ↓ Enter" glued together as one unknown key
+    // Queued per tab, so a second click waits for the first one's keys instead of interleaving with them.
     func press(_ id: String, _ keys: [String], gap: Double) {
+        let start = max(Date(), typingUntil[id] ?? .distantPast).timeIntervalSinceNow
         for (i, key) in keys.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + gap * Double(i)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + start + gap * Double(i)) {
                 self.onSession(id, "tell s to write text \(appleScriptString(key)) newline NO")
             }
         }
+        // a beat after the last key, read the screen again rather than waiting for the next tick
+        let done = start + gap * Double(keys.count) + 0.15
+        typingUntil[id] = Date().addingTimeInterval(done)
+        DispatchQueue.main.asyncAfter(deadline: .now() + done + 0.25) { self.tick() }
     }
 
     func focus(_ id: String) {
