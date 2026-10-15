@@ -73,37 +73,38 @@ struct OnboardingView: View {
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 18, height: 18)
-                Text("Notchy").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-                Spacer()
-                if model.step != .done {
-                    Button("Later", action: finish)
-                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
-                        .keyboardShortcut(.cancelAction)
-                        .help("Close this. You can open it again from the ⋯ menu.")
-                }
-            }
-            Text(title).font(.system(size: 16, weight: .semibold))
-            Text(text).font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            controls
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 30, height: 30)
+                Text(title).font(.system(size: 16, weight: .semibold))
+            }
+            Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            controls
+            HStack(spacing: 8) {
                 HStack(spacing: 5) {
                     ForEach(model.steps.indices, id: \.self) { i in
-                        Circle().fill(Color.primary.opacity(i == model.at ? 0.9 : 0.25)).frame(width: 6, height: 6)
+                        Capsule().fill(Color.primary.opacity(i == model.at ? 0.9 : 0.25))
+                            .frame(width: i == model.at ? 14 : 6, height: 6)
                     }
                 }
                 .accessibilityLabel("Step \(model.at + 1) of \(model.steps.count)")
                 Spacer()
-                if canSkip { Button("Skip") { model.next() }.buttonStyle(.borderless) }
-                Button(action: primary.action) { Text(primary.label).padding(.horizontal, 6) }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                if canSkip {
+                    Button("Skip") { model.next() }.buttonStyle(Pill(prominent: false))
+                } else if model.step != .done {
+                    Button("Later", action: finish).buttonStyle(Pill(prominent: false))
+                        .help("Close this. You can open it again from the ⋯ menu.")
+                }
+                Button(primary.label, action: primary.action).buttonStyle(Pill(prominent: true)).keyboardShortcut(.defaultAction)
             }
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
         .font(.system(size: 12.5))
+        // fixed, so a long sentence wraps instead of stretching the panel out to its widest
+        .frame(width: 478, alignment: .leading)
         .padding(16)
+        // Esc closes it like Later does, on every step
+        .background { Button("", action: finish).keyboardShortcut(.cancelAction).opacity(0) }
         .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
         .animation(.easeOut(duration: 0.15), value: model.at)
     }
@@ -142,9 +143,14 @@ struct OnboardingView: View {
         case .claude where model.claudeConnected:
             Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         case .done:
-            Toggle("Open Notchy at login", isOn: $login)
-                .toggleStyle(.switch).controlSize(.small)
-                .onChange(of: login) { _, on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
+            HStack {
+                Text("Open Notchy at login").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Toggle("Open Notchy at login", isOn: $login).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    .onChange(of: login) { _, on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
         default:
             EmptyView()
         }
@@ -159,7 +165,7 @@ struct OnboardingView: View {
             Text(name).font(.system(size: 13, weight: .medium))
             Spacer()
             switch model.access[id] ?? .unknown {
-            case .unknown: Button("Allow") { model.allow(id) }
+            case .unknown: Button("Allow") { model.allow(id) }.buttonStyle(Pill(prominent: false))
             case .asking: ProgressView().controlSize(.small)
             case .allowed: Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .denied:
@@ -183,5 +189,21 @@ struct OnboardingView: View {
         case .done: ("Finish", finish)
         default: ("Continue", model.next)
         }
+    }
+}
+
+// Drawn by hand: the system's prominent button turns grey whenever its window isn't the active one,
+// which for a panel hanging from the notch is most of the time. Orange for the main one, a light wash for the rest.
+struct Pill: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: prominent ? .semibold : .medium))
+            .foregroundStyle(prominent ? Color.black : .primary)
+            .padding(.horizontal, 14).frame(height: 28)
+            .background(Capsule().fill(prominent ? Color.orange : Color.primary.opacity(0.12)))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .contentShape(Capsule())
     }
 }
