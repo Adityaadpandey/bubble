@@ -1,4 +1,5 @@
 APP = build/Perch.app
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
 
 build:
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
@@ -30,6 +31,19 @@ icon:
 dist: build
 	ditto -c -k --keepParent $(APP) build/Perch.zip
 
+# build/Perch.dmg: the usual window where you drag Perch onto Applications
+dmg: build
+	rm -rf build/dmg build/Perch.dmg
+	mkdir -p build/dmg
+	cp -R $(APP) build/dmg/
+	ln -s /Applications build/dmg/Applications
+	hdiutil create -volname Perch -srcfolder build/dmg -ov -format UDZO build/Perch.dmg
+
+# Publishes both on GitHub as v<CFBundleShortVersionString> from Info.plist. install.sh always fetches
+# the newest release's Perch.zip, so bump the version in Info.plist before each release.
+release: dist dmg
+	gh release create v$(VERSION) build/Perch.zip build/Perch.dmg --title "Perch $(VERSION)" --generate-notes
+
 install: build
 	pkill -x Perch && sleep 1 || true
 	pkill -x NotiApp && sleep 1 || true
@@ -37,4 +51,4 @@ install: build
 	cp -R $(APP) ~/Applications/
 	open ~/Applications/Perch.app
 
-.PHONY: build check icon dist install debug
+.PHONY: build check icon dist dmg release install debug

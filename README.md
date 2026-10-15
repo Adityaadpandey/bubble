@@ -14,12 +14,21 @@ Hover over the notch, or click it, to see what's waiting, what's still running, 
 
 ## Installing
 
-1. Download `Perch.zip`, unzip it, and drag **Perch** into your Applications folder.
-2. Open it. Perch isn't notarized by Apple yet, so the first time macOS will say it can't check it. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
-   (Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/Perch.app`)
-3. When macOS asks if Perch may control iTerm2, click **Allow**. That's how it reads prompts and types your answers.
-4. If you use Claude Code, hover over the notch and click **Connect Claude Code**. This adds two small hooks to `~/.claude/settings.json`, so cards show the exact command or diff you're approving, and Perch pings you when Claude finishes. Your other hooks are left alone, and the file is backed up first as `settings.json.before-perch`.
-5. The first time Perch shows your Claude usage, macOS asks if it may read Claude Code's login from your Keychain. Click **Always Allow**, or **Deny** if you'd rather not see Claude usage.
+Paste this into Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/notchy/main/install.sh | bash
+```
+
+That's it. It downloads the latest Perch, puts it in Applications and opens it. Run the same line again any time to update.
+
+**Rather click than type?** Download `Perch.dmg` from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest), open it and drag **Perch** onto **Applications**. Perch isn't notarized by Apple yet, so the first time you open it macOS says it can't check it: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. (The Terminal line above skips this step.)
+
+### The first minute
+
+1. When macOS asks if Perch may control iTerm2, click **Allow**. That's how it reads prompts and types your answers.
+2. If you use Claude Code, hover over the notch and click **Connect Claude Code**. This adds two small hooks to `~/.claude/settings.json`, so cards show the exact command or diff you're approving, and Perch pings you when Claude finishes. Your other hooks are left alone, and the file is backed up first as `settings.json.before-perch`.
+3. The first time Perch shows your Claude usage, macOS asks if it may read Claude Code's login from your Keychain. Click **Always Allow**, or **Deny** if you'd rather not see Claude usage.
 
 Perch starts at login. You can turn that off in the **⋯** menu.
 
@@ -48,8 +57,11 @@ You need the Xcode command line tools (`xcode-select --install`).
 make install   # builds Perch.app and puts it in ~/Applications
 make check     # runs the tests
 make dist      # builds build/Perch.zip to share
+make dmg       # builds build/Perch.dmg, the drag-to-Applications installer
 make icon      # redraws the app icon from Tools/icon.swift
 ```
+
+To publish a new version, bump `CFBundleShortVersionString` in `Info.plist` and run `make release`. It uploads the zip and the disk image to a GitHub release, and the install line picks it up straight away.
 
 ## Uninstalling
 
