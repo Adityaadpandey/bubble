@@ -32,6 +32,7 @@ struct DashboardView: View {
     let editPatterns: () -> Void
     let openSettings: () -> Void
     let connectClaude: () -> Void
+    let welcome: () -> Void
 
     // idle tabs are just noise here, only show the ones that need you or are busy
     private var busy: [TabStatus] { model.tabs.filter { $0.state != .idle } }
@@ -103,6 +104,7 @@ struct DashboardView: View {
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
                     Divider()
+                    Button("Welcome to Notchy…", action: welcome)
                     Button("About Notchy") {
                         NSApp.activate()
                         NSApp.orderFrontStandardAboutPanel(nil)
