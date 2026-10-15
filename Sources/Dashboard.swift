@@ -40,7 +40,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if model.accessDenied {
                 Button(action: openSettings) {
-                    Label("Allow Perch to control iTerm2…", systemImage: "exclamationmark.triangle.fill")
+                    Label("Allow Notchy to control iTerm2…", systemImage: "exclamationmark.triangle.fill")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain).foregroundStyle(.orange).padding(12)
@@ -103,11 +103,11 @@ struct DashboardView: View {
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
                     Divider()
-                    Button("About Perch") {
+                    Button("About Notchy") {
                         NSApp.activate()
                         NSApp.orderFrontStandardAboutPanel(nil)
                     }
-                    Button("Quit Perch") { NSApp.terminate(nil) }
+                    Button("Quit Notchy") { NSApp.terminate(nil) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }

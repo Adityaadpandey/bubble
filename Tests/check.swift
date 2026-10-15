@@ -122,9 +122,9 @@ import Foundation
         precondition(parseCodex(Data("{}".utf8)) == nil && parseCommandCode(Data("not json".utf8)) == nil)
 
         // connecting Claude Code: other hooks stay, an old NotiApp entry is swapped for this app, and doing it twice changes nothing
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("perch-check-settings.json")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("notchy-check-settings.json")
         try? FileManager.default.removeItem(at: file)
-        try? FileManager.default.removeItem(at: file.appendingPathExtension("before-perch"))
+        try? FileManager.default.removeItem(at: file.appendingPathExtension("before-notchy"))
         try! Data(#"{"model":"opus","hooks":{"Notification":[{"hooks":[{"type":"command","command":"/x/cc-status"}]},{"hooks":[{"type":"command","command":"/Users/me/Applications/NotiApp.app/Contents/MacOS/NotiApp hook"}]}]}}"#.utf8).write(to: file)
         precondition(!ClaudeHooks.connected(file))
         try! ClaudeHooks.connect(file)
@@ -134,7 +134,7 @@ import Foundation
         let notify = hooks["Notification"]!.flatMap { $0["hooks"] as! [[String: String]] }.map { $0["command"]! }
         precondition(notify == ["/x/cc-status", ClaudeHooks.command], "\(notify)")
         precondition(hooks["PermissionRequest"]!.count == 1 && saved["model"] as? String == "opus" && ClaudeHooks.connected(file))
-        precondition(FileManager.default.fileExists(atPath: file.appendingPathExtension("before-perch").path))
+        precondition(FileManager.default.fileExists(atPath: file.appendingPathExtension("before-notchy").path))
         // a settings file that isn't valid JSON is never overwritten
         try! Data("{ oops".utf8).write(to: file)
         precondition((try? ClaudeHooks.connect(file)) == nil && String(data: try! Data(contentsOf: file), encoding: .utf8) == "{ oops")

@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-// Draws Perch's app icon and saves every size macOS wants, then `iconutil` packs them into Resources/AppIcon.icns.
+// Draws Notchy's app icon and saves every size macOS wants, then `iconutil` packs them into Resources/AppIcon.icns.
 // Run with `make icon`. The idea: the notch has opened up into a little black island on a warm screen,
-// with an orange ping and a couple of lines of question in it, which is what Perch does all day.
+// with an orange ping and a couple of lines of question in it, which is what Notchy does all day.
 
 struct Icon: View {
     var body: some View {

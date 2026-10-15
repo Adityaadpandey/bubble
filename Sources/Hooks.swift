@@ -1,15 +1,15 @@
 import Foundation
 
-// Perch spots prompts by reading the screen, but two Claude Code hooks make it better: the diff or command
-// on permission cards, and a ping when Claude finishes and is waiting on you. Both run `Perch hook`, and
+// Notchy spots prompts by reading the screen, but two Claude Code hooks make it better: the diff or command
+// on permission cards, and a ping when Claude finishes and is waiting on you. Both run `Notchy hook`, and
 // this adds them to ~/.claude/settings.json next to whatever hooks you already have, e.g.
 //
 //   "PermissionRequest": [
 //     { "hooks": [{ "type": "command", "command": "/your/other/hook" }] },
-//     { "hooks": [{ "type": "command", "command": "/Applications/Perch.app/Contents/MacOS/Perch hook" }] }
+//     { "hooks": [{ "type": "command", "command": "/Applications/Notchy.app/Contents/MacOS/Notchy hook" }] }
 //   ]
 //
-// Other tools' hooks are left alone. An older Perch entry (or one from when it was called NotiApp) is
+// Other tools' hooks are left alone. An older Notchy entry (or one from when it was called Perch or NotiApp) is
 // swapped for the current path, so moving the app never leaves Claude calling a file that isn't there.
 enum ClaudeHooks {
     static let events = ["PermissionRequest", "Notification"]
@@ -27,8 +27,8 @@ enum ClaudeHooks {
 
     static func connected(_ file: URL = settings) -> Bool { events.allSatisfy { commands(for: $0, in: file).contains(command) } }
 
-    // some Perch hook is there, maybe pointing at an old copy of the app
-    static var added: Bool { events.contains { commands(for: $0, in: settings).contains(where: isPerch) } }
+    // some Notchy hook is there, maybe pointing at an old copy of the app
+    static var added: Bool { events.contains { commands(for: $0, in: settings).contains(where: isNotchy) } }
 
     static func connect(_ settings: URL = settings) throws {
         var root: [String: Any] = [:]
@@ -36,16 +36,16 @@ enum ClaudeHooks {
             // a settings file we can't read is left exactly as it is, never overwritten
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CocoaError(.fileReadCorruptFile) }
             root = obj
-            // one copy of how it was before Perch first touched it
-            let backup = settings.appendingPathExtension("before-perch")
+            // one copy of how it was before Notchy first touched it
+            let backup = settings.appendingPathExtension("before-notchy")
             if !FileManager.default.fileExists(atPath: backup.path) { try? data.write(to: backup) }
         }
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         for event in events {
             var groups = (hooks[event] as? [[String: Any]] ?? []).compactMap { group -> [String: Any]? in
                 let all = group["hooks"] as? [[String: Any]] ?? []
-                let kept = all.filter { !isPerch($0["command"] as? String ?? "") }
-                if kept.isEmpty && !all.isEmpty { return nil } // that group was only ever Perch
+                let kept = all.filter { !isNotchy($0["command"] as? String ?? "") }
+                if kept.isEmpty && !all.isEmpty { return nil } // that group was only ever Notchy
                 var group = group
                 group["hooks"] = kept
                 return group
@@ -59,8 +59,8 @@ enum ClaudeHooks {
         try out.write(to: settings, options: .atomic)
     }
 
-    private static func isPerch(_ command: String) -> Bool {
-        command == Self.command || command.hasSuffix(" hook") && (command.contains("/Perch") || command.contains("/NotiApp"))
+    private static func isNotchy(_ command: String) -> Bool {
+        command == Self.command || command.hasSuffix(" hook") && ["/Notchy", "/Perch", "/NotiApp"].contains(where: command.contains)
     }
 
     private static func commands(for event: String, in file: URL) -> [String] {

@@ -40,7 +40,7 @@ final class CardModel: ObservableObject {
 }
 
 // A see-through window that hangs from the notch, above the menu bar, every app and full screen spaces.
-// It never activates Perch, so whatever you were typing in keeps focus until you click into it.
+// It never activates Notchy, so whatever you were typing in keeps focus until you click into it.
 class NotchPanel: NSPanel {
     var dismiss: (() -> Void)? // clicked away or pressed Esc, for windows that should just go away then
 

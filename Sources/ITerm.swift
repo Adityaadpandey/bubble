@@ -12,7 +12,7 @@ struct Session {
 // called with real arguments, so keys and reply text travel as data and are never pasted into script source.
 final class ITerm {
     static let bundleID = "com.googlecode.iterm2"
-    let queue = DispatchQueue(label: "perch.iterm")
+    let queue = DispatchQueue(label: "notchy.iterm")
     var onDenied: (Bool) -> Void = { _ in }
     private let script: NSAppleScript
 
@@ -157,7 +157,7 @@ final class ITerm {
 
         var err: NSDictionary?
         let result = script.executeAppleEvent(event, error: &err)
-        // -1743: you said no (or haven't been asked yet) to letting Perch control iTerm2
+        // -1743: you said no (or haven't been asked yet) to letting Notchy control iTerm2
         let denied = (err?[NSAppleScript.errorNumber] as? Int) == -1743
         DispatchQueue.main.async { self.onDenied(denied) }
         return err == nil ? result : nil
