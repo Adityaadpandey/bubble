@@ -373,16 +373,40 @@ final class App: NSObject, NSApplicationDelegate {
             let (keys, gap) = keys(for: a, in: prompt)
             let ok = iterm.send(where_, keys, gap: gap)
             log("answer \(id) \(a) cursor \(prompt.cursor) keys \(keys) trusted card: \(trustCard) sent: \(ok)")
+
+            // Watch just this tab (~30ms a look, vs ~500ms to read every tab) until Claude has redrawn:
+            // the screen changed and looks the same on the next look. Then show it on the card right away.
+            var fresh: (tail: String, prompt: Prompt?)?
+            var last: Prompt?? = .none
+            for _ in 0..<25 where ok {
+                let tail = iterm.readTail(where_)
+                let now = detectPrompt(screen: tail, patterns: pats, quietFor: .infinity)
+                if now != prompt, case .some(let previous) = last, previous == now { fresh = (tail, now); break }
+                last = .some(now)
+                Thread.sleep(forTimeInterval: 0.06)
+            }
+
             DispatchQueue.main.async {
                 self.inFlight[id, default: 1] -= 1
                 self.typedAt[id] = Date()
-                if !ok, let card = self.cards[id] {
+                guard let card = self.cards[id] else { return }
+                if !ok {
                     // undo the optimistic tick or Sent badge and say so, instead of pretending it worked
                     card.prompt = expected
                     card.sent = nil
                     card.failed = true
+                } else if let fresh, self.inFlight[id, default: 0] == 0 {
+                    if let p = fresh.prompt {
+                        if p != card.prompt {
+                            log("mirror \(id) \(p.line.prefix(40).debugDescription) ticks \(p.rows.compactMap(\.checked)) cursor \(p.cursor) (fast)")
+                            card.prompt = p
+                        }
+                        card.snapshot = fresh.tail
+                    } else if card.prompt.kind != .idle {
+                        self.close(id, "prompt gone from screen")
+                    }
+                    self.relayout()
                 }
-                self.tick() // don't wait a whole second to show what happened
             }
         }
     }
