@@ -1,76 +1,145 @@
+<div align="center">
+
+<img src="docs/icon.png" width="128" alt="Notchy icon">
+
 # Notchy
 
-Notchy lives in your MacBook's notch and taps you on the shoulder when something in your terminal is waiting on you.
+**Your terminal, answered from the notch.**
 
-When Claude Code asks "Do you want to proceed?", or any CLI stops at `[y/N]`, a pick-one list or a question, the notch opens up into a card with the question and its choices. Click an answer (or type a reply) and Notchy types it into the right iTerm2 tab for you. You never have to go find the tab.
+When Claude Code or any CLI stops to ask you something, Notchy drops it out of your MacBook's notch.<br>
+Click an answer and it types it into the right iTerm2 tab. No more hunting for the tab that's waiting on you.
 
-Hover over the notch, or click it, to see what's waiting, what's still running, and how much of your Claude, Codex and Command Code plan limits you've used.
+[![Latest release](https://img.shields.io/github/v/release/Adityaadpandey/notchy?label=release&color=f97316)](https://github.com/Adityaadpandey/notchy/releases/latest)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple)
+![Apple silicon and Intel](https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111)
 
-## What you need
+<img src="docs/card.jpg" alt="A Claude Code permission prompt hanging from the MacBook notch, with Yes, Yes and don't ask again, and No buttons">
 
-- A Mac on macOS 14 Sonoma or later (Apple silicon or Intel). A notch is nice but not required: without one, Notchy opens from the top middle of the screen.
-- [iTerm2](https://iterm2.com). Notchy reads and answers prompts in iTerm2 tabs only.
-- Claude Code, Codex and Command Code are all optional. Notchy shows usage for whichever of them you're signed in to.
+</div>
 
-## Installing
-
-Paste this into Terminal:
+## Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/notchy/main/install.sh | bash
 ```
 
-That's it. It downloads the latest Notchy, puts it in Applications and opens it. Run the same line again any time to update.
-
-**Use Homebrew?**
+Or with Homebrew:
 
 ```sh
 brew install --cask adityaadpandey/tap/notchy
 ```
 
-Update with `brew upgrade --cask notchy`, remove with `brew uninstall --cask notchy`.
+Both put Notchy in Applications and open it. Run the same command again to update.
 
-**Rather click than type?** Download `Notchy.dmg` from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest), open it and drag **Notchy** onto **Applications**. Notchy isn't notarized by Apple yet, so the first time you open it macOS says it can't check it: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. (The Terminal line and Homebrew both skip this step.)
+<details>
+<summary>Prefer a disk image?</summary>
 
-### The first minute
+Download **Notchy.dmg** from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest) and drag Notchy onto Applications.
 
-1. When macOS asks if Notchy may control iTerm2, click **Allow**. That's how it reads prompts and types your answers.
-2. If you use Claude Code, hover over the notch and click **Connect Claude Code**. This adds two small hooks to `~/.claude/settings.json`, so cards show the exact command or diff you're approving, and Notchy pings you when Claude finishes. Your other hooks are left alone, and the file is backed up first as `settings.json.before-notchy`.
-3. The first time Notchy shows your Claude usage, macOS asks if it may read Claude Code's login from your Keychain. Click **Always Allow**, or **Deny** if you'd rather not see Claude usage.
+Notchy isn't notarized by Apple yet, so the first time you open it macOS will say it can't check it. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. The two commands above skip this step.
 
-Notchy starts at login. You can turn that off in the **⋯** menu.
+</details>
 
-## Using it
+**You'll need** macOS 14 Sonoma or later and [iTerm2](https://iterm2.com). No notch? Notchy hangs from the top middle of the screen instead.
 
-- **A card drops out of the notch** when a prompt is waiting in a tab you're not looking at. Click a choice, or type in the reply box and press Return. The card folds away as soon as you answer.
-- **Keyboard:** press **⌃⌥Space** to put the keyboard on the top card (press it again for the next card). Then:
-  - **1–9** picks a choice, **Y** / **N** answers a yes/no question
-  - **← →** move between questions
-  - **Tab** jumps to the reply box, **Esc** hands the keyboard back
-- **Hover over the notch** (or click it, or the bell in the menu bar) for the dashboard: tabs waiting on you, tabs still working, and your plan limits.
-- **Pause** in the dashboard silences Notchy for an hour, or until you resume it.
-- **Teach it a new CLI:** **⋯ → Edit prompt patterns…** opens `~/.config/notchy/patterns.txt`, one regex per line, matched against the last line of each tab.
+## Getting set up
+
+It takes about a minute, and Notchy asks for everything as it goes:
+
+1. **Allow Notchy to control iTerm2** when macOS asks. That's how it reads prompts and types your answers.
+2. **Connect Claude Code** (optional). Hover over the notch and click the button. Cards then show the exact command or diff you're approving, and Notchy pings you when Claude finishes.
+3. **Allow Keychain access** (optional) the first time Notchy shows your Claude usage. Choose *Always Allow*, or *Deny* to skip Claude usage.
+
+## What it does
+
+### Answers prompts from the notch
+
+When a tab you're not looking at needs you, a card opens out of the notch with the question and its choices. Click one, or type a reply. The card folds back away the moment you answer.
+
+It understands:
+
+- Claude Code permission prompts, multiple-choice questions and multi-select checkboxes
+- `[y/N]` and `(yes/no)` questions from any CLI
+- Arrow-key lists and checkbox lists (Inquirer, Clack, Prompts…)
+- Plain questions like `Project name:` once the screen goes quiet
+
+Anything asking for a password stays in the terminal.
+
+### Shows what's running and how much you have left
+
+<img src="docs/dashboard.jpg" alt="The Notchy dashboard showing waiting and working tabs, and usage limits for Claude, Codex and Command Code">
+
+Hover over the notch (or click it) to see every tab that's waiting or working, plus your **5-hour and weekly limits for Claude, Codex and Command Code**, with when each one resets. Notchy shows whichever of these tools you're signed in to.
+
+### Works from the keyboard
+
+Press **⌃⌥Space** to put the keyboard on the top card. Press it again to move to the next one.
+
+| Key | Does |
+|---|---|
+| `1`–`9` | Pick a choice |
+| `Y` / `N` | Answer a yes/no question |
+| `←` / `→` | Move between questions |
+| `Tab` | Jump to the reply box |
+| `Esc` | Hand the keyboard back to your app |
+
+### And a few more things
+
+- **Pause** Notchy for an hour, or until you resume it, from the dashboard.
+- **Nudges you once** if a prompt has been waiting for two minutes.
+- **Teach it a new CLI** in **⋯ → Edit prompt patterns…**: one regex per line, matched against the last line of each tab.
+- **Opens at login.** Turn that off in the **⋯** menu.
 
 ## Privacy
 
-Everything stays on your Mac. Notchy reads your iTerm2 tabs locally to spot prompts and never sends them anywhere.
+Everything stays on your Mac. Notchy reads your iTerm2 tabs locally and never sends them anywhere.
 
-For plan limits it uses the logins those tools already saved on your Mac: Claude Code's login from the Keychain, `~/.codex/auth.json` and `~/.commandcode/auth.json`. It sends each one only to that tool's own server (api.anthropic.com, chatgpt.com, api.commandcode.ai), the same request the tool itself makes for its usage screen. Notchy never refreshes or changes these logins.
+For usage limits it reuses the logins those tools already saved on your Mac (Claude Code's in the Keychain, `~/.codex/auth.json` and `~/.commandcode/auth.json`). It sends each login only to that tool's own server, making the same request the tool makes for its own usage screen, and never changes or refreshes it.
+
+Connecting Claude Code adds two hooks to `~/.claude/settings.json` and leaves your other hooks alone. The original file is backed up as `settings.json.before-notchy`.
+
+## Troubleshooting
+
+<details>
+<summary>No cards show up</summary>
+
+Check **System Settings → Privacy & Security → Automation** and make sure Notchy is allowed to control iTerm2. If it was denied, the dashboard shows a button that takes you there. Cards also don't open for the tab you're already looking at.
+
+</details>
+
+<details>
+<summary>Claude usage says "Keychain access was denied"</summary>
+
+You clicked Deny on the Keychain prompt. Quit and reopen Notchy to be asked again.
+
+</details>
+
+<details>
+<summary>Where are the logs?</summary>
+
+`~/Library/Logs/Notchy.log` has one line for every card opened or closed and every answer sent.
+
+</details>
+
+## Uninstall
+
+```sh
+brew uninstall --cask notchy        # if you installed with Homebrew
+```
+
+Otherwise quit Notchy from the **⋯** menu and drag it from Applications to the Bin.
+
+If you connected Claude Code, also remove the two entries ending in `Notchy hook` from `~/.claude/settings.json` (or restore `settings.json.before-notchy`). Notchy's own files live in `~/.config/notchy` and `~/Library/Logs/Notchy.log`.
 
 ## Building from source
 
-You need the Xcode command line tools (`xcode-select --install`).
+You'll need the Xcode command line tools (`xcode-select --install`).
 
 ```sh
-make install   # builds Notchy.app and puts it in ~/Applications
-make check     # runs the tests
-make dist      # builds build/Notchy.zip to share
-make dmg       # builds build/Notchy.dmg, the drag-to-Applications installer
-make icon      # redraws the app icon from Tools/icon.swift
+make install   # build and install to ~/Applications
+make check     # run the tests
+make dmg       # build the disk image
+make icon      # redraw the app icon from Tools/icon.swift
 ```
 
-To publish a new version, bump `CFBundleShortVersionString` in `Info.plist` and run `make release`. It uploads the zip and the disk image to a GitHub release, and the install line picks it up straight away. It also bumps the Homebrew cask in [homebrew-tap](https://github.com/Adityaadpandey/homebrew-tap) to the new version and checksum (`make cask` does just that part).
-
-## Uninstalling
-
-Quit Notchy from the **⋯** menu and delete it from Applications. If you connected Claude Code, remove the two entries ending in `Notchy hook` from `~/.claude/settings.json`, or put back `settings.json.before-notchy`. Notchy's own files are `~/.config/notchy` and `~/Library/Logs/Notchy.log`.
+**Releasing:** bump `CFBundleShortVersionString` in `Info.plist`, then run `make release`. It publishes the zip and the disk image on GitHub, and updates the [Homebrew cask](https://github.com/Adityaadpandey/homebrew-tap) to the new version.
