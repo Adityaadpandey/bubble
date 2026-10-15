@@ -378,7 +378,9 @@ struct NotchChrome: ViewModifier {
         let shape = NotchShape(ears: docked, radius: 10 + 16 * min(grow, 1))
         return ClampWidth(min: 510, max: 720) {
             content
-                .padding(.top, docked ? notch.height : 0)
+                // clear the notch, but the content's own padding already leaves a gap under it, so take 8 off
+                // rather than stacking both: 32pt notch + 14pt padding read as a big empty band
+                .padding(.top, docked ? max(notch.height - 8, 0) : 0)
                 .padding(.horizontal, docked ? NotchShape.ear : 0)
         }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { new in
