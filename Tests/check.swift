@@ -126,6 +126,12 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // history: decisions get a name, ticking one box of several doesn't, and a typed reply is never quoted
+        let hp = Prompt(kind: .menu, line: "Do you want to proceed?", rows: [Row(label: "Yes", number: 1), Row(label: "No", number: 2)])
+        precondition(answerLabel(.pick(1), in: hp) == "No" && answerLabel(.yes, in: hp) == "Yes" && answerLabel(.nextTab, in: hp) == nil)
+        precondition(answerLabel(.reply("my secret"), in: hp) == "Typed a reply")
+        precondition(answerLabel(.pick(0), in: Prompt(kind: .list, line: "Toppings", rows: [Row(label: "Ham", checked: false)])) == nil)
+
         // the "finished" card quotes the last thing the tool said, above its input box
         let claudeDone = "⏺ Added the settings window.\n  Files: Settings.swift, Prefs.swift\n\n────────────\n❯ \n────────────\n  ? for shortcuts\n"
         precondition(finishedSummary(screen: claudeDone) == ["Added the settings window.", "Files: Settings.swift, Prefs.swift"])

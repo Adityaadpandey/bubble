@@ -608,6 +608,7 @@ final class App: NSObject, NSApplicationDelegate {
     func answer(_ id: String, _ a: Answer) {
         guard let card = cards[id], let where_ = known[id] else { return }
         let expected = card.prompt, snapshot = card.snapshot, pats = patterns
+        let tab = card.title, command = card.detail?.body ?? expected.context.joined(separator: " ")
         // if an earlier click's keys are still landing, the screen is half updated, so trust the card
         let trustCard = inFlight[id, default: 0] > 0
 
@@ -661,6 +662,9 @@ final class App: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.inFlight[id, default: 1] -= 1
                 self.typedAt[id] = Date()
+                if ok, let label = answerLabel(a, in: prompt) {
+                    History.shared.add(HistoryEntry(at: Date(), tab: tab, question: expected.line, answer: label, command: command))
+                }
                 if !ok, self.cards[id] == nil, let s = self.known[id] { self.open(s, expected, detail: nil) }
                 guard let card = self.cards[id] else { return }
                 if !ok {
