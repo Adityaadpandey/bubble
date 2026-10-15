@@ -9,6 +9,16 @@ final class Terminals {
     static let iTerm = "com.googlecode.iterm2", terminal = "com.apple.Terminal"
     static func app(of id: String) -> String { id.hasPrefix("/dev/") ? terminal : iTerm }
 
+    static let backends: [PaneBackend] = [TmuxBackend()]
+    static func backend(for id: String) -> PaneBackend? { backends.first { id.hasPrefix($0.prefix) } }
+
+    // is the terminal showing this tab the app in front? A tmux pane could be in any terminal, so any known one will do.
+    static func hostIsFront(_ id: String) -> Bool {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        guard let b = backend(for: id) else { return front == app(of: id) }
+        return b.bundle.map { $0 == front } ?? terminalApps.contains(front)
+    }
+
     let queue = DispatchQueue(label: "notchy.terminals")
     var onDenied: (Bool) -> Void = { _ in }
     private var denied: [String: Bool] = [:] // per app, only touched on `queue`
@@ -49,7 +59,7 @@ final class Terminals {
                         set si to 0
                         repeat with s in sessions of t
                             set si to si + 1
-                            set end of out to {unique id of s, name of s, my tailof(s), id of w, ti, si}
+                            set end of out to {unique id of s, name of s, my tailof(s), id of w, ti, si, tty of s}
                         end repeat
                     end repeat
                 end repeat
@@ -218,9 +228,20 @@ final class Terminals {
                     return Session(id: id, name: item.atIndex(2)?.stringValue ?? (app == Self.iTerm ? "iTerm2" : "Terminal"),
                                    tail: item.atIndex(3)?.stringValue ?? "",
                                    window: Int(item.atIndex(4)?.int32Value ?? 0), tab: Int(item.atIndex(5)?.int32Value ?? 0),
-                                   pane: Int(item.atIndex(6)?.int32Value ?? 0))
+                                   pane: Int(item.atIndex(6)?.int32Value ?? 0),
+                                   tty: app == Self.terminal ? id : item.atIndex(7)?.stringValue ?? "")
                 }
             }
+            // a tab that's only showing a tmux session is left out, its panes are listed on their own
+            var attached = Set<String>()
+            for b in Self.backends {
+                if let bundle = b.bundle, !isRunning(bundle) { continue }
+                guard let r = b.list() else { continue } // ponytail: a failed read drops that backend's cards for one tick, add a failed flag if it flickers
+                fronts += r.fronts
+                sessions += r.sessions
+                attached.formUnion(b.clientTTYs())
+            }
+            sessions.removeAll { attached.contains($0.tty) }
             let anyDenied = self.denied.values.contains(true)
             DispatchQueue.main.async {
                 self.onDenied(anyDenied)
@@ -230,18 +251,23 @@ final class Terminals {
     }
 
     func focus(_ s: Session) {
-        queue.async { _ = self.call(Self.app(of: s.id), "focus", [s.id]) }
+        queue.async {
+            if let b = Self.backend(for: s.id) { return b.focus(s.id) }
+            _ = self.call(Self.app(of: s.id), "focus", [s.id])
+        }
     }
 
     // MARK: only call these on `queue`
 
     func readTail(_ s: Session) -> String {
-        call(Self.app(of: s.id), "readone", [s.id, s.window, s.tab, s.pane])?.stringValue ?? ""
+        if let b = Self.backend(for: s.id) { return b.read(s.id) }
+        return call(Self.app(of: s.id), "readone", [s.id, s.window, s.tab, s.pane])?.stringValue ?? ""
     }
 
     // true only if every key made it into the tab
     func send(_ s: Session, _ keys: [String], gap: Double) -> Bool {
         guard !keys.isEmpty else { return false }
+        if let b = Self.backend(for: s.id) { return b.send(s.id, keys, gap: gap) }
         return call(Self.app(of: s.id), "sendkeys", [s.id, s.window, s.tab, s.pane, keys, gap])?.booleanValue ?? false
     }
 
