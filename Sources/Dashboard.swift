@@ -92,7 +92,6 @@ struct DashboardView: View {
             .font(.system(size: 12))
             .padding(10)
         }
-        .frame(width: 320)
         .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
     }
 }

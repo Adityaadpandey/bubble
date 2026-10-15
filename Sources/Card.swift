@@ -142,7 +142,6 @@ struct CardView: View {
             if model.keyboard { keyboardHint }
         }
         .padding(14)
-        .frame(width: 360)
         .disabled(model.waitingOnSend)
         .opacity(model.waitingOnSend ? 0.55 : 1)
         .overlay(alignment: .top) { if model.waitingOnSend { sentBadge } }
@@ -373,9 +372,11 @@ struct NotchChrome: ViewModifier {
         let w = folded.width + (max(size.width, folded.width) - folded.width) * grow
         let h = folded.height + (max(size.height, folded.height) - folded.height) * grow
         let shape = NotchShape(ears: docked, radius: 10 + 16 * min(grow, 1))
-        return content
-            .padding(.top, docked ? notch.height : 0)
-            .padding(.horizontal, docked ? NotchShape.ear : 0)
+        return ClampWidth(min: 510, max: 720) {
+            content
+                .padding(.top, docked ? notch.height : 0)
+                .padding(.horizontal, docked ? NotchShape.ear : 0)
+        }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
             .environment(\.colorScheme, .dark)
             .opacity(reveal)
@@ -388,6 +389,25 @@ struct NotchChrome: ViewModifier {
             .overlay(alignment: .top) {
                 if let outline { shape.stroke(outline, lineWidth: 2).frame(width: w, height: h) }
             }
+    }
+}
+
+// As wide as the content would like, kept between `min` and `max`, then as tall as it needs at that width.
+// e.g. a short "Overwrite? [y/N]" card stays at 510, a long command grows it up to 720 and wraps after that.
+// (A plain .frame(minWidth:maxWidth:) picks the width but measures the height as if nothing wrapped,
+// so long text would get cut off.)
+struct ClampWidth: Layout {
+    let min: CGFloat
+    let max: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let view = subviews.first else { return .zero }
+        let width = Swift.min(Swift.max(view.sizeThatFits(.unspecified).width, min), max)
+        return CGSize(width: width, height: view.sizeThatFits(ProposedViewSize(width: width, height: nil)).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 

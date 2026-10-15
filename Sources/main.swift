@@ -296,7 +296,9 @@ final class App: NSObject, NSApplicationDelegate {
         let now = Date()
         if let panel = dashPanel {
             guard dashByHover, !panel.isKeyWindow else { return }
-            if panel.frame.contains(mouse) { awaySince = nil; return }
+            // a point of slack all round: with the cursor pushed up into the notch it sits on the very top
+            // edge, which a plain contains() counts as outside, and the dashboard would flicker open and shut
+            if panel.frame.insetBy(dx: -1, dy: -1).contains(mouse) { awaySince = nil; return }
             if now.timeIntervalSince(awaySince ?? now) > 0.25 { hideDashboard() } else if awaySince == nil { awaySince = now }
             return
         }
