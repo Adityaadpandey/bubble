@@ -7,6 +7,17 @@ import SwiftUI
 let hookNote = Notification.Name("dev.notchy.hook")
 let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notchy/patterns.txt")
 
+// Notify mode: `Notchy notify "pi finished"` for tools that have no Claude-style hooks but can run a command when
+// they're done, like pi's agent_settled event or Codex's `notify` setting. It lands as the same "waiting on you" card.
+if CommandLine.arguments.dropFirst().first == "notify" {
+    guard let session = hookSession(ProcessInfo.processInfo.environment) ?? controllingTTY() else { exit(0) }
+    let words = CommandLine.arguments.dropFirst(2).joined(separator: " ")
+    DistributedNotificationCenter.default().postNotificationName(
+        hookNote, object: session, userInfo: ["kind": "idle", "body": words.isEmpty ? "Finished and waiting for you" : words],
+        deliverImmediately: true)
+    exit(0)
+}
+
 // Hook mode: Claude Code runs `Notchy hook` with the event JSON on stdin.
 // We boil it down to a few strings, hand them to the running app and exit right away,
 // so Claude never waits on us and shows its own prompt as usual.
