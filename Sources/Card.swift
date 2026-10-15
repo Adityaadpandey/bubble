@@ -85,12 +85,12 @@ struct CardView: View {
     private var navRows: [Int] { p.kind == .menu ? p.rows.indices.filter { p.rows[$0].number == nil } : [] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
             if !p.tabs.isEmpty { tabStrip }
             context
             Text(p.line.isEmpty ? "Waiting for you" : p.line)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 14.5, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
             if !visibleRows.isEmpty {
                 VStack(spacing: 6) {
@@ -117,10 +117,10 @@ struct CardView: View {
                     .font(.system(size: 12)).foregroundStyle(.red)
             }
             replyBox
-            footer
+            if model.keyboard { keyboardHint }
         }
-        .padding(16)
-        .frame(width: 380)
+        .padding(14)
+        .frame(width: 360)
         .disabled(model.waitingOnSend)
         .opacity(model.waitingOnSend ? 0.55 : 1)
         .overlay(alignment: .top) { if model.waitingOnSend { sentBadge } }
@@ -159,43 +159,25 @@ struct CardView: View {
         return .handled
     }
 
+    // One quiet line: who's asking, then jump to the tab or hide the card
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: isClaude ? "sparkle" : "terminal")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isClaude ? Color.orange : Color.gray))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(kindLabel)
-                    Text("·")
-                    Text(model.since, style: .relative)
-                }
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isClaude ? Color.orange : .secondary)
+            Text(model.title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
-            Button { act(.close) } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 20, height: 20)
-                    .background(Circle().fill(Color.primary.opacity(0.08)))
-            }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
-            .help("Hide this card, the prompt stays in the terminal")
-            .accessibilityLabel("Hide")
+            iconButton("arrow.up.forward.app", help: "Open in iTerm2") { act(.open) }
+            iconButton("xmark", help: "Hide this card, the prompt stays in the terminal") { act(.close) }
         }
     }
 
-    private var kindLabel: String {
-        switch p.kind {
-        case .idle: return "Waiting for your next message"
-        case .yesNo: return "Asking yes or no"
-        case .text: return "Asking for an answer"
-        case .list: return p.isMulti ? "Pick one or more" : "Pick one"
-        case .menu where p.isMulti: return "Pick one or more"
-        case .menu where model.detail != nil || p.line.hasPrefix("Do you want"): return "Needs your permission"
-        case .menu: return "Asking a question"
+    private func iconButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
         }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help(help).accessibilityLabel(help)
     }
 
     // Several questions at once: ✓ for answered ones, arrows to move between them
@@ -259,13 +241,9 @@ struct CardView: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(replyFocused ? 0.3 : 0.12)))
     }
 
-    private var footer: some View {
-        HStack {
-            Text(model.keyboard ? "1–9 pick · Y/N · ←/→ questions · Tab reply · Esc hide" : "⌃⌥Space to answer by keyboard")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
-            Spacer()
-            Button("Open in iTerm2 ↗") { act(.open) }.buttonStyle(.link).font(.system(size: 11.5))
-        }
+    private var keyboardHint: some View {
+        Text("1–9 pick · Y/N · ←/→ questions · Tab reply · Esc hide")
+            .font(.system(size: 10.5)).foregroundStyle(.tertiary)
     }
 
     private var sentBadge: some View {
@@ -302,11 +280,12 @@ struct RowButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Text("\(number)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .frame(width: 20, height: 20)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(showKey ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.08)))
+                if showKey {
+                    Text("\(number)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .frame(width: 20, height: 20)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.accentColor.opacity(0.25)))
+                }
                 if let checked = row.checked {
                     Image(systemName: checked ? "checkmark.square.fill" : "square")
                         .foregroundStyle(checked ? Color.accentColor : .secondary)
