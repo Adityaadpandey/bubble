@@ -360,13 +360,13 @@ struct NotchChrome: ViewModifier {
             let opened = ctx.date.timeIntervalSince(openedAt)
             let closing = leftAt.map { ctx.date.timeIntervalSince($0) }
             // grow: 0 = folded in the notch, 1 = full size. reveal: how visible the content is.
-            let grow = closing.map { 1 - smooth($0 / 0.26) } ?? springOpen(opened)
-            let reveal = closing.map { 1 - smooth($0 / 0.1) } ?? smooth((opened - 0.1) / 0.25)
+            let grow = closing.map { 1 - smooth($0 / 0.15) } ?? springOpen(opened)
+            let reveal = closing.map { 1 - smooth($0 / 0.06) } ?? smooth((opened - 0.04) / 0.12)
             chrome(content, grow: size == .zero ? 0 : grow, reveal: reveal)
         }
         .padding([.horizontal, .bottom], Self.margin)
         .onChange(of: leaving) { _, now in if now { leftAt = Date() } }
-        .task { try? await Task.sleep(for: .seconds(1.2)); settled = true }
+        .task { try? await Task.sleep(for: .seconds(0.6)); settled = true }
     }
 
     private func chrome(_ content: Content, grow: Double, reveal: Double) -> some View {
@@ -391,11 +391,11 @@ struct NotchChrome: ViewModifier {
     }
 }
 
-// A spring that settles in about half a second with a small overshoot (under 3%), the same feel as the
-// iPhone's Dynamic Island. At 0s it's 0, around 0.2s it passes 1 and peaks near 1.03, by 0.5s it's resting at 1.
+// A quick spring with a small overshoot (under 2%), the same snap as the iPhone's Dynamic Island.
+// At 0s it's 0, halfway out by 0.06s, past 1 by 0.16s peaking near 1.02, resting at 1 by 0.3s.
 func springOpen(_ t: Double) -> Double {
     guard t > 0 else { return 0 }
-    let damping = 0.75, w = 2 * Double.pi / 0.42
+    let damping = 0.78, w = 2 * Double.pi / 0.26
     let wd = w * (1 - damping * damping).squareRoot()
     return 1 - exp(-damping * w * t) * (cos(wd * t) + damping * w / wd * sin(wd * t))
 }
