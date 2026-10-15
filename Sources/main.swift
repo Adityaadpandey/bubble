@@ -175,13 +175,14 @@ final class App: NSObject, NSApplicationDelegate {
                 if let d = details[s.id], Date().timeIntervalSince(d.at) > 5 { details[s.id] = nil }
             }
 
+            // mid-walk the screen shows the cursor halfway there, don't mirror that
+            // A read takes ~0.5s, so one that started before our keys landed shows the old screen.
+            // Mirroring it would flash your ticks away for a moment, or bring back a card you just answered.
+            // Claude also needs a moment to redraw after the keys arrive, hence the extra 0.4s.
+            let typing = inFlight[s.id, default: 0] > 0 || (typedAt[s.id] ?? .distantPast).addingTimeInterval(0.4) > readAt
             if let card = cards[s.id] {
                 if card.failed, card.prompt != found { card.failed = false } // something got through after all
-                // mid-walk the screen shows the cursor halfway there, don't mirror that
-                // A read takes ~0.5s, so one that started before our keys landed shows the old screen.
-                // Mirroring it would flash your ticks away for a moment.
-                // Claude also needs a moment to redraw after the keys arrive, hence the extra 0.4s.
-                if inFlight[s.id, default: 0] > 0 || (typedAt[s.id] ?? .distantPast).addingTimeInterval(0.4) > readAt { continue }
+                if typing { continue }
                 if let found {
                     // Live mirror: a ticked box, a moved cursor or the next question all land on the same card
                     if found != card.prompt {
@@ -201,7 +202,7 @@ final class App: NSObject, NSApplicationDelegate {
                     NSSound(named: "Glass")?.play()
                     panels[s.id].map(shake)
                 }
-            } else if let found, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
+            } else if let found, !typing, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
                 open(s, found, detail: details.removeValue(forKey: s.id))
             }
         }
@@ -261,7 +262,7 @@ final class App: NSObject, NSApplicationDelegate {
         dashPanel = nil
         dashClosedAt = Date()
         dashboard.leaving = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { panel.close() }
     }
 
     // usage loading in or a tab starting work changes its height, so this runs again after every dashboard update
@@ -272,14 +273,16 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     // An invisible button over the notch itself, so clicking the notch opens the dashboard.
-    // It's painted black, which you can't see because the notch has no pixels there.
+    // It's painted black, which you can't see because the notch has no pixels there. It stops short of
+    // the notch's edges and its rounded bottom corners, or you'd see a square black box around them.
     func makeNotchButton() {
         let size = notchSize
         guard size.width > 0, let screen = notchScreen else { return }
         let view = ClickView { [weak self] in self?.toggleDashboard() }
         let panel = NotchPanel(view, raised: 2)
         panel.backgroundColor = .black
-        panel.setFrame(NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height), display: false)
+        let w = size.width - 24, h = size.height - 12
+        panel.setFrame(NSRect(x: screen.frame.midX - w / 2, y: screen.frame.maxY - h, width: w, height: h), display: false)
         panel.orderFrontRegardless()
         notchButton = panel
     }
@@ -384,7 +387,7 @@ final class App: NSObject, NSApplicationDelegate {
         if cards[id] != nil { log("close \(id) \(why)") }
         cards.removeValue(forKey: id)?.leaving = true
         if let panel = panels.removeValue(forKey: id) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() } // once it has folded away
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { panel.close() } // once it has folded away
         }
         order.removeAll { $0 == id }
         relayout()
@@ -434,8 +437,12 @@ final class App: NSObject, NSApplicationDelegate {
             // ticking a box: show it now and keep the card live, you're probably ticking another
             card.prompt.rows[i].checked?.toggle()
             card.prompt.cursor = i
+        } else if expected.tabs.isEmpty, !a.movesBetweenQuestions {
+            // a final answer: the card folds away right now and the keys follow a moment later.
+            // If they don't make it, the card comes back saying so.
+            close(id, "answered")
         } else {
-            // dim the card with a "Sent" badge until the screen moves on, so it never looks like it's asking again
+            // more questions to come, so dim the card with a "Sent" badge until the next one shows up
             card.sent = card.prompt
             card.sentAt = Date()
         }
@@ -473,6 +480,7 @@ final class App: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.inFlight[id, default: 1] -= 1
                 self.typedAt[id] = Date()
+                if !ok, self.cards[id] == nil, let s = self.known[id] { self.open(s, expected, detail: nil) }
                 guard let card = self.cards[id] else { return }
                 if !ok {
                     // undo the optimistic tick or Sent badge and say so, instead of pretending it worked

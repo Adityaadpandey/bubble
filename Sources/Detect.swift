@@ -177,6 +177,8 @@ enum Answer: Equatable {
     case yes, no
     case reply(String)
     case prevTab, nextTab // Claude multi-question
+
+    var movesBetweenQuestions: Bool { self == .prevTab || self == .nextTab }
 }
 
 /// The keystrokes that answer `p`, sent one chunk at a time `gap` seconds apart.

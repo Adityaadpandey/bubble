@@ -344,13 +344,12 @@ struct NotchChrome: ViewModifier {
 
     private var open: Bool { shown && !leaving }
     private var shape: AnyShape {
-        docked ? AnyShape(NotchShape()) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        docked ? AnyShape(NotchShape(neck: notch)) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     func body(content: Content) -> some View {
         content
             .padding(.top, docked ? notch.height : 0)
-            .padding(.horizontal, docked ? NotchShape.ear : 0)
             .background { if docked { fade } }
             .glassEffect(.regular.tint(.black.opacity(0.35)), in: shape)
             .overlay { if let outline { shape.stroke(outline, lineWidth: 2) } }
@@ -360,7 +359,7 @@ struct NotchChrome: ViewModifier {
             .scaleEffect(x: open ? 1 : min(max(notch.width, 180) / size.width, 1),
                          y: open ? 1 : min(max(notch.height, 24) / size.height, 1), anchor: .top)
             .onAppear { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { shown = true } }
-            .animation(.spring(duration: 0.3, bounce: 0), value: leaving)
+            .animation(.spring(duration: 0.22, bounce: 0), value: leaving)
     }
 
     // so the notch looks like it stretched open rather than a window sitting under it
@@ -370,33 +369,44 @@ struct NotchChrome: ViewModifier {
             LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 36)
             Spacer(minLength: 0)
         }
-        .clipShape(NotchShape())
+        .clipShape(NotchShape(neck: notch))
     }
 }
 
-// The outline of the card hanging from the notch: flat along the top of the screen, a small
-// inward curve on each side where it meets the menu bar (the same curve the notch itself has),
-// and soft rounded corners at the bottom. Picture an upside-down tab:
+// The outline of a window hanging from the notch. Inside the menu bar it's exactly as wide as the
+// notch, so it just looks like the notch got longer, then it curves outward into the card below.
+// The menu bar either side stays as it was. Picture the notch pouring into the card:
 //
-//   ‾‾╮                    ╭‾‾    <- top edge of the screen
-//     │                    │
-//     ╰────────────────────╯
+//          │ notch │          <- inside the menu bar, black on black
+//     ╭────╯       ╰────╮     <- curves out just under the menu bar
+//     │                 │
+//     ╰─────────────────╯
 struct NotchShape: Shape {
-    static let ear: CGFloat = 10
-    var radius: CGFloat = 24
+    var neck: CGSize        // the notch it hangs from, e.g. 185 x 32
+    var radius: CGFloat = 22
+    private let flare: CGFloat = 10
 
     func path(in rect: CGRect) -> Path {
-        let (w, h, e, r) = (rect.width, rect.height, Self.ear, radius)
+        let (w, h, r, top) = (rect.width, rect.height, radius, neck.height)
+        let f = min(flare, top)
+        let left = (w - neck.width) / 2, right = (w + neck.width) / 2
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x, y: rect.minY + y) }
         var p = Path()
-        p.move(to: CGPoint(x: 0, y: 0))
-        p.addQuadCurve(to: CGPoint(x: e, y: e), control: CGPoint(x: e, y: 0))
-        p.addLine(to: CGPoint(x: e, y: h - r))
-        p.addQuadCurve(to: CGPoint(x: e + r, y: h), control: CGPoint(x: e, y: h))
-        p.addLine(to: CGPoint(x: w - e - r, y: h))
-        p.addQuadCurve(to: CGPoint(x: w - e, y: h - r), control: CGPoint(x: w - e, y: h))
-        p.addLine(to: CGPoint(x: w - e, y: e))
-        p.addQuadCurve(to: CGPoint(x: w, y: 0), control: CGPoint(x: w - e, y: 0))
+        p.move(to: pt(left, 0))
+        p.addLine(to: pt(left, top - f))
+        p.addQuadCurve(to: pt(left - f, top), control: pt(left, top))
+        p.addLine(to: pt(r, top))
+        p.addQuadCurve(to: pt(0, top + r), control: pt(0, top))
+        p.addLine(to: pt(0, h - r))
+        p.addQuadCurve(to: pt(r, h), control: pt(0, h))
+        p.addLine(to: pt(w - r, h))
+        p.addQuadCurve(to: pt(w, h - r), control: pt(w, h))
+        p.addLine(to: pt(w, top + r))
+        p.addQuadCurve(to: pt(w - r, top), control: pt(w, top))
+        p.addLine(to: pt(right + f, top))
+        p.addQuadCurve(to: pt(right, top - f), control: pt(right, top))
+        p.addLine(to: pt(right, 0))
         p.closeSubpath()
-        return p.offsetBy(dx: rect.minX, dy: rect.minY)
+        return p
     }
 }
