@@ -50,7 +50,8 @@ class NotchPanel: NSPanel {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false // App holds on to it, AppKit must not free it on close
         level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + raised) // over the menu bar, so it can touch the notch
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // on every desktop, and stationary so it doesn't slide along with the desktop when you switch
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false // a window shadow is drawn once at full size and would hang around the notch while the card is folded up

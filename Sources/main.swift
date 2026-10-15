@@ -273,14 +273,15 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     // An invisible button over the notch itself, so clicking the notch opens the dashboard.
-    // It's painted black, which you can't see because the notch has no pixels there. It stops short of
-    // the notch's edges and its rounded bottom corners, or you'd see a square black box around them.
+    // Nothing is drawn: a fully clear window lets clicks fall through, so it's filled at 0.1% opacity,
+    // which no one can see but still counts as something to click. It stops short of the notch's edges too.
     func makeNotchButton() {
         let size = notchSize
         guard size.width > 0, let screen = notchScreen else { return }
         let view = ClickView { [weak self] in self?.toggleDashboard() }
         let panel = NotchPanel(view, raised: 2)
-        panel.backgroundColor = .black
+        panel.backgroundColor = NSColor.black.withAlphaComponent(0.001)
+        panel.ignoresMouseEvents = false // said out loud, so the clear parts take clicks too
         let w = size.width - 24, h = size.height - 12
         panel.setFrame(NSRect(x: screen.frame.midX - w / 2, y: screen.frame.maxY - h, width: w, height: h), display: false)
         panel.orderFrontRegardless()
