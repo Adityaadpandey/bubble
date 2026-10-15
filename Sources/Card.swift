@@ -39,30 +39,45 @@ final class CardModel: ObservableObject {
     var waitingOnSend: Bool { sent == prompt }
 }
 
-// A card that drops out of the notch, above the menu bar, every app and full screen spaces.
-// It never activates NotiApp, so whatever you were typing in keeps focus until you click into the card.
-final class CardPanel: NSPanel {
-    let host: NSHostingView<CardView>
+// A see-through window that hangs from the notch, above the menu bar, every app and full screen spaces.
+// It never activates NotiApp, so whatever you were typing in keeps focus until you click into it.
+class NotchPanel: NSPanel {
+    var dismiss: (() -> Void)? // clicked away or pressed Esc, for windows that should just go away then
 
     override var canBecomeKey: Bool { true } // lets the reply box and keyboard shortcuts take typing
 
-    init(_ view: CardView) {
-        host = NSHostingView(rootView: view)
+    init(_ view: NSView, raised: Int = 3) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isReleasedWhenClosed = false // App holds on to it, AppKit must not free it on close
-        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3) // over the menu bar, so it can touch the notch
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + raised) // over the menu bar, so it can touch the notch
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false // a window shadow is drawn once at full size and would hang around the notch while the card is folded up
-        contentView = host
-        fit()
+        contentView = view
+        setContentSize(view.fittingSize)
+    }
+
+    // AppKit nudges windows below the menu bar, but a docked window has to sit right against the top edge
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+
+    override func resignKey() {
+        super.resignKey()
+        dismiss?()
+    }
+
+    override func cancelOperation(_ sender: Any?) { dismiss?() }
+}
+
+final class CardPanel: NotchPanel {
+    let host: NSHostingView<CardView>
+
+    init(_ view: CardView) {
+        host = NSHostingView(rootView: view)
+        super.init(host)
     }
 
     func fit() { setContentSize(host.fittingSize) }
-
-    // AppKit nudges windows below the menu bar, but the docked card has to sit right against the top edge
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     // clicked into another app, so the card is no longer listening to the keyboard
     override func resignKey() {
@@ -77,9 +92,6 @@ struct CardView: View {
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
     @FocusState private var cardFocused: Bool
-    @State private var shown = false
-    @State private var size = CGSize(width: 380, height: 200)
-    private var open: Bool { shown && !model.leaving }
 
     private var p: Prompt { model.prompt }
     private var isClaude: Bool { p.kind == .menu || p.kind == .idle }
@@ -129,46 +141,17 @@ struct CardView: View {
             if model.keyboard { keyboardHint }
         }
         .padding(14)
-        .padding(.top, model.docked ? model.notch.height : 0)
         .frame(width: 360)
         .disabled(model.waitingOnSend)
         .opacity(model.waitingOnSend ? 0.55 : 1)
-        .overlay(alignment: .top) { if model.waitingOnSend { sentBadge.padding(.top, model.docked ? model.notch.height : 0) } }
-        .padding(.horizontal, model.docked ? NotchShape.ear : 0)
-        .background { if model.docked { notchFade } }
-        .glassEffect(.regular.tint(.black.opacity(0.35)), in: shape)
-        .overlay { if model.keyboard { shape.stroke(Color.accentColor, lineWidth: 2) } }
-        .environment(\.colorScheme, .dark)
-        // Opens like the notch is stretching: it starts as a black pill exactly the notch's size,
-        // springs out to the full card, and the black melts into glass as the text fades in.
-        // Closing plays the same thing backwards, so the card tucks itself back into the notch.
-        .overlay { shape.fill(.black).allowsHitTesting(false).opacity(open ? 0 : 1).animation(.easeOut(duration: 0.25).delay(open ? 0.12 : 0), value: open) }
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-        .scaleEffect(x: open ? 1 : min(max(model.notch.width, 180) / size.width, 1),
-                     y: open ? 1 : min(max(model.notch.height, 24) / size.height, 1), anchor: .top)
-        .onAppear { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { shown = true } }
-        .animation(.spring(duration: 0.3, bounce: 0), value: model.leaving)
+        .overlay(alignment: .top) { if model.waitingOnSend { sentBadge } }
+        .modifier(NotchChrome(docked: model.docked, notch: model.notch, leaving: model.leaving, outline: model.keyboard ? .accentColor : nil))
         .animation(.easeOut(duration: 0.15), value: model.waitingOnSend)
         .focusable()
         .focusEffectDisabled()
         .focused($cardFocused)
         .onChange(of: model.keyboard) { _, on in cardFocused = on }
         .onKeyPress(action: key)
-    }
-
-    private var shape: AnyShape {
-        model.docked ? AnyShape(NotchShape()) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    // Solid black where the card meets the notch, melting into glass below it,
-    // so the notch looks like it stretched open rather than a window sitting under it
-    private var notchFade: some View {
-        VStack(spacing: 0) {
-            Color.black.frame(height: model.notch.height)
-            LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 36)
-            Spacer(minLength: 0)
-        }
-        .clipShape(NotchShape())
     }
 
     // ⌃⌥Space put the keyboard on this card. 1–9 pick, Y/N for yes/no prompts, ←/→ between questions,
@@ -342,6 +325,52 @@ struct RowButton: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .accessibilityLabel(row.checked == nil ? row.label : "\(row.label), \(row.checked! ? "checked" : "unchecked")")
+    }
+}
+
+// The look every notch window shares, cards and the dashboard alike. Docked, it's a notch-shaped
+// glass island, solid black where it meets the notch; otherwise a rounded glass card.
+//
+// It opens like the notch is stretching: it starts as a black pill exactly the notch's size,
+// springs out to full size, and the black melts into glass as the content fades in.
+// Setting `leaving` plays that backwards, so it tucks itself back into the notch.
+struct NotchChrome: ViewModifier {
+    let docked: Bool
+    let notch: CGSize
+    let leaving: Bool
+    var outline: Color? = nil
+    @State private var shown = false
+    @State private var size = CGSize(width: 380, height: 200)
+
+    private var open: Bool { shown && !leaving }
+    private var shape: AnyShape {
+        docked ? AnyShape(NotchShape()) : AnyShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.top, docked ? notch.height : 0)
+            .padding(.horizontal, docked ? NotchShape.ear : 0)
+            .background { if docked { fade } }
+            .glassEffect(.regular.tint(.black.opacity(0.35)), in: shape)
+            .overlay { if let outline { shape.stroke(outline, lineWidth: 2) } }
+            .environment(\.colorScheme, .dark)
+            .overlay { shape.fill(.black).allowsHitTesting(false).opacity(open ? 0 : 1).animation(.easeOut(duration: 0.25).delay(open ? 0.12 : 0), value: open) }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .scaleEffect(x: open ? 1 : min(max(notch.width, 180) / size.width, 1),
+                         y: open ? 1 : min(max(notch.height, 24) / size.height, 1), anchor: .top)
+            .onAppear { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { shown = true } }
+            .animation(.spring(duration: 0.3, bounce: 0), value: leaving)
+    }
+
+    // so the notch looks like it stretched open rather than a window sitting under it
+    private var fade: some View {
+        VStack(spacing: 0) {
+            Color.black.frame(height: notch.height)
+            LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 36)
+            Spacer(minLength: 0)
+        }
+        .clipShape(NotchShape())
     }
 }
 

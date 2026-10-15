@@ -15,12 +15,14 @@ final class Dashboard: ObservableObject {
     @Published var accessDenied = false
     @Published var usage: [Usage] = []
     var usageAt = Date.distantPast
+    var notch = CGSize.zero
+    @Published var leaving = false
 
     var paused: Bool { (pausedUntil ?? .distantPast) > Date() }
     var waiting: Int { tabs.filter { $0.state == .waiting }.count }
 }
 
-// The popover under the menu bar bell: what needs you, what's running, and how much of each plan is left
+// Drops out of the notch when you click it or the menu bar bell: what needs you, what's running, and how much of each plan is left
 struct DashboardView: View {
     @ObservedObject var model: Dashboard
     let pick: (String) -> Void
@@ -91,6 +93,7 @@ struct DashboardView: View {
             .padding(10)
         }
         .frame(width: 320)
+        .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
     }
 }
 
@@ -139,7 +142,7 @@ struct UsageRow: View {
             ForEach(usage.limits, id: \.label) { l in
                 HStack(spacing: 8) {
                     Text(l.label).frame(width: 50, alignment: .leading).foregroundStyle(.secondary)
-                    // drawn by hand, a ProgressView turns grey whenever the popover isn't the key window
+                    // drawn by hand, a ProgressView turns grey whenever the dashboard isn't the key window
                     Capsule().fill(Color.primary.opacity(0.1)).frame(height: 5).overlay(alignment: .leading) {
                         GeometryReader { g in
                             Capsule().fill(l.used >= 0.9 ? Color.red : l.used >= 0.7 ? .orange : .green).frame(width: g.size.width * l.used)

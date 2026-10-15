@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import Carbon
+import Combine
 import SwiftUI
 
 let hookNote = Notification.Name("dev.notiapp.hook")
@@ -85,21 +86,19 @@ final class App: NSObject, NSApplicationDelegate {
     var hotKey: HotKey?
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let dashboard = Dashboard()
-    let popover = NSPopover()
+    var dashPanel: NotchPanel?
+    var dashClosedAt = Date.distantPast
+    var notchButton: NSPanel?
+    var dashSub: AnyCancellable?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.imageHugsTitle = true
-        statusItem.button?.action = #selector(togglePopover)
+        statusItem.button?.action = #selector(toggleDashboard)
         statusItem.button?.target = self
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: DashboardView(
-            model: dashboard,
-            pick: { [weak self] id in self?.popover.performClose(nil); self?.pick(id) },
-            pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
-            editPatterns: { [weak self] in self?.editPatterns() },
-            openSettings: { [weak self] in self?.openAutomationSettings() }))
         updateIcon()
+        makeNotchButton()
+        dashSub = dashboard.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.placeDashboard() } }
         iterm.onDenied = { [weak self] denied in
             guard let self, self.dashboard.accessDenied != denied else { return }
             self.dashboard.accessDenied = denied
@@ -235,11 +234,54 @@ final class App: NSObject, NSApplicationDelegate {
         button.setAccessibilityLabel(waiting > 0 ? "NotiApp, \(waiting) waiting" : "NotiApp")
     }
 
-    @objc func togglePopover() {
-        guard let button = statusItem.button else { return }
-        if popover.isShown { popover.performClose(nil); return }
+    // The dashboard drops out of the notch, the same way cards do, and folds back in when you click away or press Esc
+    @objc func toggleDashboard() {
+        if dashPanel != nil { return hideDashboard() }
+        // clicking the bell or notch to close it first takes focus away, which already closed it a moment ago
+        guard Date().timeIntervalSince(dashClosedAt) > 0.3 else { return }
         if Date().timeIntervalSince(dashboard.usageAt) > 60 { refreshUsage() }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        dashboard.notch = notchSize
+        dashboard.leaving = false
+        let host = NSHostingView(rootView: DashboardView(
+            model: dashboard,
+            pick: { [weak self] id in self?.hideDashboard(); self?.pick(id) },
+            pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
+            editPatterns: { [weak self] in self?.hideDashboard(); self?.editPatterns() },
+            openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() }))
+        host.sizingOptions = [] // we size and place it ourselves, pinned to the top of the screen
+        let panel = NotchPanel(host, raised: 4) // above any card sitting in the notch
+        panel.dismiss = { [weak self] in self?.hideDashboard() }
+        dashPanel = panel
+        placeDashboard()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func hideDashboard() {
+        guard let panel = dashPanel else { return }
+        dashPanel = nil
+        dashClosedAt = Date()
+        dashboard.leaving = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { panel.close() }
+    }
+
+    // usage loading in or a tab starting work changes its height, so this runs again after every dashboard update
+    func placeDashboard() {
+        guard let panel = dashPanel, let host = panel.contentView, let screen = notchScreen else { return }
+        panel.setContentSize(host.fittingSize)
+        panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
+    }
+
+    // An invisible button over the notch itself, so clicking the notch opens the dashboard.
+    // It's painted black, which you can't see because the notch has no pixels there.
+    func makeNotchButton() {
+        let size = notchSize
+        guard size.width > 0, let screen = notchScreen else { return }
+        let view = ClickView { [weak self] in self?.toggleDashboard() }
+        let panel = NotchPanel(view, raised: 2)
+        panel.backgroundColor = .black
+        panel.setFrame(NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height), display: false)
+        panel.orderFrontRegardless()
+        notchButton = panel
     }
 
     // Plan limits for Codex and Command Code, every 5 minutes and whenever the dashboard opens after a minute
@@ -470,3 +512,11 @@ let app = NSApplication.shared
 let delegate = App()
 app.delegate = delegate
 app.run()
+
+final class ClickView: NSView {
+    let action: () -> Void
+    init(_ action: @escaping () -> Void) { self.action = action; super.init(frame: .zero) }
+    required init?(coder: NSCoder) { nil }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { action() }
+}
