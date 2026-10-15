@@ -65,15 +65,6 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
 
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        let reply = UNTextInputNotificationAction(identifier: "reply", title: "Reply…", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "Type your answer")
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: "yesno", actions: [
-                UNNotificationAction(identifier: "approve", title: "Approve"),
-                UNNotificationAction(identifier: "deny", title: "Deny", options: .destructive),
-                reply,
-            ], intentIdentifiers: []),
-            UNNotificationCategory(identifier: "reply", actions: [reply], intentIdentifiers: []),
-        ])
 
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(hook(_:)), name: hookNote, object: nil)
         try? SMAppService.mainApp.register() // start at login
@@ -95,15 +86,16 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
                 continue
             }
             guard let found, !isLooking(at: s.id, front: front) else { continue }
-            let body = found.kind == .claude ? (claudeDetail.removeValue(forKey: s.id) ?? found.line) : found.line
             pending[s.id] = Pending(prompt: found, snapshot: s.tail)
-            notify(s.id, title: s.name, body: body, category: "yesno")
+            // the hook told us what Claude wants to run, e.g. "Bash: npm install left-pad"
+            let detail = found.kind == .claude ? claudeDetail.removeValue(forKey: s.id) : nil
+            notify(s.id, title: s.name, subtitle: detail, body: found.line.isEmpty ? "Waiting for you" : found.line, prompt: found)
         }
     }
 
     func stillThere(_ p: Pending, tail: String, found: Prompt?) -> Bool {
         // Claude idle has nothing to match on, so "still waiting" means the screen hasn't changed at all
-        p.prompt.kind == .idle ? tail == p.snapshot : found == p.prompt
+        p.prompt.kind == .idle ? tail == p.snapshot : p.prompt.sameAs(found)
     }
 
     // You count as looking if this exact tab is in front and you touched the keyboard or mouse in the last minute
@@ -119,20 +111,45 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
 
         guard pending[id] == nil, let (front, sessions) = readSessions(),
               let s = sessions.first(where: { $0.id == id }), !isLooking(at: id, front: front) else { return }
-        pending[id] = Pending(prompt: Prompt(kind: .idle, line: text), snapshot: s.tail)
-        notify(id, title: s.name, body: text, category: "reply")
+        let prompt = Prompt(kind: .idle, line: text)
+        pending[id] = Pending(prompt: prompt, snapshot: s.tail)
+        notify(id, title: s.name, subtitle: nil, body: text, prompt: prompt)
     }
 
     // MARK: notifications
 
-    func notify(_ id: String, title: String, body: String, category: String) {
+    var categories: [String: UNNotificationCategory] = [:] // one per session, buttons depend on the prompt
+
+    func notify(_ id: String, title: String, subtitle: String?, body: String, prompt: Prompt) {
+        let reply = UNTextInputNotificationAction(identifier: "reply", title: "Reply…", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "Type your answer")
+        let actions: [UNNotificationAction]
+        switch prompt.kind {
+        case .claude:
+            // a button per menu choice, e.g. "1. Yes" / "2. Yes, and don't ask again" / "3. No".
+            // Claude's own "Type something." and "Chat about this" are what Reply… is for.
+            actions = prompt.options.enumerated()
+                .filter { !["Type something.", "Chat about this"].contains($0.element) }
+                .map { UNNotificationAction(identifier: "opt-\($0.offset + 1)", title: "\($0.offset + 1). \($0.element)") } + [reply]
+        case .yesNo:
+            actions = [UNNotificationAction(identifier: "approve", title: "Approve"),
+                       UNNotificationAction(identifier: "deny", title: "Deny", options: .destructive), reply]
+        case .idle:
+            actions = [reply]
+        }
+        categories[id] = UNNotificationCategory(identifier: "cat-\(id)", actions: actions, intentIdentifiers: [])
+        center.setNotificationCategories(Set(categories.values))
+
         let c = UNMutableNotificationContent()
         c.title = title
+        c.subtitle = subtitle ?? ""
         c.body = body
         c.sound = .default
-        c.categoryIdentifier = category
-        // the session id doubles as the notification id, so each tab has at most one
-        center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+        c.categoryIdentifier = "cat-\(id)"
+        // the session id doubles as the notification id, so each tab has at most one.
+        // Reading the categories back first makes sure the new buttons are registered before it shows.
+        center.getNotificationCategories { _ in
+            self.center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+        }
     }
 
     func clear(_ id: String) {
@@ -151,19 +168,22 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
             self.clear(id)
 
             // Re-read the screen first. If the prompt is gone, a late click must not type into whatever is there now.
-            guard let s = self.readSessions()?.1.first(where: { $0.id == id }),
-                  self.stillThere(p, tail: s.tail, found: detectPrompt(screen: s.tail, patterns: self.patterns)) else { return }
+            guard let s = self.readSessions()?.1.first(where: { $0.id == id }) else { return }
+            let now = detectPrompt(screen: s.tail, patterns: self.patterns)
+            guard self.stillThere(p, tail: s.tail, found: now) else { return }
 
-            switch (action, p.prompt.kind) {
-            case ("approve", .claude): self.type(id, "", enter: true)       // "1. Yes" is selected by default
-            case ("deny", .claude): self.type(id, "\u{1b}", enter: false)   // Esc = "No, tell Claude what to do"
-            case ("approve", _): self.type(id, "y", enter: true)
-            case ("deny", _): self.type(id, "n", enter: true)
-            case ("reply", .claude):
-                // decline the dialog, then give Claude your note once its input box is back
-                self.type(id, "\u{1b}", enter: false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.type(id, text, enter: true) }
-            case ("reply", _): self.type(id, text, enter: true)
+            let down = "\u{1b}[B", up = "\u{1b}[A"
+            switch action {
+            case let a where a.hasPrefix("opt-"):
+                // walk the ❯ from wherever it is now to the chosen option, then Enter
+                let n = Int(a.dropFirst(4)) ?? 1, cursor = now?.cursor ?? 1
+                self.press(id, Array(repeating: n > cursor ? down : up, count: abs(n - cursor)) + ["\r"])
+            case "approve": self.press(id, ["y\r"])
+            case "deny": self.press(id, ["n\r"])
+            case "reply" where p.prompt.kind == .claude:
+                // back out of the menu, then give Claude your note once its input box is back
+                self.press(id, ["\u{1b}", text + "\r"], gap: 0.6)
+            case "reply": self.press(id, [text + "\r"])
             default: break
             }
         }
@@ -204,11 +224,14 @@ final class App: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelega
         return (r.atIndex(1)?.stringValue ?? "", sessions)
     }
 
-    func type(_ id: String, _ text: String, enter: Bool) {
-        // escape for an AppleScript string literal, and pass Esc through as `character id 27`
-        let literal = text == "\u{1b}" ? "(character id 27)"
-            : "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
-        onSession(id, "tell s to write text \(literal) newline \(enter ? "YES" : "NO")")
+    // Sends each chunk as its own keypress, a little apart, so TUIs like Claude don't see
+    // "↓ ↓ Enter" glued together as one unknown key
+    func press(_ id: String, _ keys: [String], gap: Double = 0.15) {
+        for (i, key) in keys.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + gap * Double(i)) {
+                self.onSession(id, "tell s to write text \(appleScriptString(key)) newline NO")
+            }
+        }
     }
 
     func focus(_ id: String) {
