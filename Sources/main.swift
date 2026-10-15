@@ -248,7 +248,7 @@ final class App: NSObject, NSApplicationDelegate {
             pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
             editPatterns: { [weak self] in self?.hideDashboard(); self?.editPatterns() },
             openSettings: { [weak self] in self?.hideDashboard(); self?.openAutomationSettings() }))
-        host.sizingOptions = [] // we size and place it ourselves, pinned to the top of the screen
+        host.sizingOptions = [.intrinsicContentSize] // still reports its size, but leaves placing the window to us, pinned to the top of the screen
         let panel = NotchPanel(host, raised: 4) // above any card sitting in the notch
         panel.dismiss = { [weak self] in self?.hideDashboard() }
         dashPanel = panel
