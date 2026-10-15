@@ -7,7 +7,7 @@
 **Your terminal, answered from the notch.**
 
 When Claude Code or any CLI stops to ask you something, Notchy drops it out of your MacBook's notch.<br>
-Click an answer and it types it into the right iTerm2 tab. No more hunting for the tab that's waiting on you.
+Click an answer and it types it into the right terminal tab. No more hunting for the tab that's waiting on you.
 
 [![Latest release](https://img.shields.io/github/v/release/Adityaadpandey/notchy?label=release&color=f97316)](https://github.com/Adityaadpandey/notchy/releases/latest)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple)
@@ -41,13 +41,13 @@ Notchy isn't notarized by Apple yet, so the first time you open it macOS will sa
 
 </details>
 
-**You'll need** macOS 14 Sonoma or later and [iTerm2](https://iterm2.com). No notch? Notchy hangs from the top middle of the screen instead.
+**You'll need** macOS 14 Sonoma or later, and [iTerm2](https://iterm2.com) or the Terminal app that comes with your Mac. No notch? Notchy hangs from the top middle of the screen instead.
 
 ## Getting set up
 
 It takes about a minute, and Notchy asks for everything as it goes:
 
-1. **Allow Notchy to control iTerm2** when macOS asks. That's how it reads prompts and types your answers.
+1. **Allow Notchy to control iTerm2 or Terminal** when macOS asks. That's how it reads prompts and types your answers.
 2. **Connect Claude Code** (optional). Hover over the notch and click the button. Cards then show the exact command or diff you're approving, and Notchy pings you when Claude finishes.
 3. **Allow Keychain access** (optional) the first time Notchy shows your Claude usage. Choose *Always Allow*, or *Deny* to skip Claude usage.
 
@@ -65,6 +65,8 @@ It understands:
 - Plain questions like `Project name:` once the screen goes quiet
 
 Anything asking for a password stays in the terminal.
+
+In Terminal, Notchy can only type a line and press Enter, so a few answers need keys Terminal can't send: ticking checkboxes, typing your own reply to a Claude menu, and Claude's prompts with several questions. For those the card's ↗ button takes you to the tab. iTerm2 handles everything.
 
 ### Shows what's running and how much you have left
 
@@ -93,7 +95,7 @@ Press **⌃⌥Space** to put the keyboard on the top card. Press it again to mov
 
 ## Privacy
 
-Everything stays on your Mac. Notchy reads your iTerm2 tabs locally and never sends them anywhere.
+Everything stays on your Mac. Notchy reads your terminal tabs locally and never sends them anywhere.
 
 For usage limits it reuses the logins those tools already saved on your Mac (Claude Code's in the Keychain, `~/.codex/auth.json` and `~/.commandcode/auth.json`). It sends each login only to that tool's own server, making the same request the tool makes for its own usage screen, and never changes or refreshes it.
 
@@ -104,7 +106,7 @@ Connecting Claude Code adds two hooks to `~/.claude/settings.json` and leaves yo
 <details>
 <summary>No cards show up</summary>
 
-Check **System Settings → Privacy & Security → Automation** and make sure Notchy is allowed to control iTerm2. If it was denied, the dashboard shows a button that takes you there. Cards also don't open for the tab you're already looking at.
+Check **System Settings → Privacy & Security → Automation** and make sure Notchy is allowed to control iTerm2 or Terminal, whichever you use. If it was denied, the dashboard shows a button that takes you there. Cards also don't open for the tab you're already looking at.
 
 </details>
 
