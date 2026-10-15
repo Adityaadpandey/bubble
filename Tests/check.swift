@@ -76,6 +76,11 @@ import Foundation
         let yn = d("Overwrite? [y/N]")!
         precondition(keys(for: .yes, in: yn).keys == ["y\r"] && keys(for: .reply("maybe"), in: yn).keys == ["maybe\r"])
 
+        // dashboard status from Claude's spinner
+        precondition(claudeActivity("⏺ done\n✽ Cerebrating… (39s · ↓ 3.1k tokens)\n───\n❯ \n") == "Cerebrating… 39s")
+        precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")
+        precondition(claudeActivity("⏺ All done, the build passes.\n❯ ") == nil)
+
         // whatever you type in Reply must reach the terminal byte for byte, quotes and all
         for text in ["plain", #"say "hi" \ there"#, "\u{1b}[B", "yes\r", "", #"" & do shell script "x" & ""#] {
             var err: NSDictionary?

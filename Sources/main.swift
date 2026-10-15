@@ -65,19 +65,22 @@ final class App: NSObject, NSApplicationDelegate {
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
-    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    let warning = NSMenuItem(title: "", action: #selector(openAutomationSettings), keyEquivalent: "")
+    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let dashboard = Dashboard()
+    let popover = NSPopover()
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        statusItem.button?.image = NSImage(systemSymbolName: "bell.badge", accessibilityDescription: "NotiApp")
-        let menu = NSMenu()
-        warning.isHidden = true
-        warning.target = self
-        menu.addItem(warning)
-        menu.addItem(withTitle: "Edit Prompt Patterns…", action: #selector(editPatterns), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit NotiApp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        statusItem.menu = menu
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.action = #selector(togglePopover)
+        statusItem.button?.target = self
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: DashboardView(
+            model: dashboard,
+            pick: { [weak self] id in self?.popover.performClose(nil); self?.pick(id) },
+            pause: { [weak self] until in self?.dashboard.pausedUntil = until; self?.updateIcon() },
+            editPatterns: { [weak self] in self?.editPatterns() },
+            openSettings: { [weak self] in self?.openAutomationSettings() }))
+        updateIcon()
 
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
             try? FileManager.default.createDirectory(at: patternsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -97,9 +100,18 @@ final class App: NSObject, NSApplicationDelegate {
         // ponytail: re-reads a tiny file every tick, cache by mtime if it ever shows up in a profile
         patterns = loadPatterns((try? String(contentsOf: patternsFile, encoding: .utf8)) ?? "")
         guard let (front, sessions) = readSessions() else { return }
+        var tabs: [TabStatus] = []
 
         for s in sessions {
             let found = detectPrompt(screen: s.tail, patterns: patterns)
+            if let p = found ?? cards[s.id]?.prompt {
+                tabs.append(TabStatus(id: s.id, name: s.name, state: .waiting, note: p.line.isEmpty ? "Waiting for you" : p.line))
+            } else if let busy = claudeActivity(s.tail) {
+                tabs.append(TabStatus(id: s.id, name: s.name, state: .working, note: busy))
+            } else if s.name.localizedCaseInsensitiveContains("claude") {
+                tabs.append(TabStatus(id: s.id, name: s.name, state: .idle, note: "Idle"))
+            }
+
             if found == nil {
                 hidden.remove(s.id)
                 // the hook fires just before Claude draws its dialog, so give the detail a moment to find its prompt
@@ -117,17 +129,60 @@ final class App: NSObject, NSApplicationDelegate {
                 }
                 // Clicked but nothing changed on screen for a while, so let you try again
                 if card.sent != nil, Date().timeIntervalSince(card.sentAt) > 4 { card.sent = nil }
-                if !card.repinged, Date().timeIntervalSince(card.since) > 120 {
+                // still unanswered after 2 minutes, so nudge once more
+                if !card.repinged, !dashboard.paused, Date().timeIntervalSince(card.since) > 120 {
                     card.repinged = true
                     NSSound(named: "Glass")?.play()
+                    panels[s.id].map(shake)
                 }
-            } else if let found, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
+            } else if let found, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id, front: front) {
                 open(s, found, detail: details.removeValue(forKey: s.id))
             }
         }
         // tabs that were closed take their cards with them
         for id in cards.keys where !sessions.contains(where: { $0.id == id }) { close(id) }
         relayout()
+        // waiting ones first, then working, then idle
+        tabs.sort { rank($0.state) < rank($1.state) }
+        if tabs != dashboard.tabs { dashboard.tabs = tabs }
+        updateIcon()
+    }
+
+    private func rank(_ s: TabState) -> Int { s == .waiting ? 0 : s == .working ? 1 : 2 }
+
+    // Bell with a count of waiting prompts, or a crossed out bell while paused
+    func updateIcon() {
+        if dashboard.pausedUntil != nil, !dashboard.paused { dashboard.pausedUntil = nil } // the hour is up
+        let symbol = dashboard.paused || dashboard.accessDenied ? "bell.slash" : dashboard.waiting > 0 ? "bell.badge.fill" : "bell"
+        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "NotiApp")
+        statusItem.button?.title = dashboard.waiting > 0 ? " \(dashboard.waiting)" : ""
+    }
+
+    @objc func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown { popover.performClose(nil) } else { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
+    }
+
+    // A row in the dashboard: answer it on its card if it's waiting, otherwise jump to the tab
+    func pick(_ id: String) {
+        if cards[id] == nil, let s = readSessions()?.1.first(where: { $0.id == id }),
+           let found = detectPrompt(screen: s.tail, patterns: patterns) {
+            hidden.remove(id)
+            open(s, found, detail: details.removeValue(forKey: id))
+        }
+        guard cards[id] != nil else { return focus(id) }
+        for (other, c) in cards { c.keyboard = other == id }
+        panels[id]?.makeKeyAndOrderFront(nil)
+    }
+
+    // a little side to side wiggle, like a wrong password field
+    func shake(_ panel: NSWindow) {
+        let origin = panel.frame.origin
+        let anim = CAKeyframeAnimation()
+        anim.values = [0, -8, 8, -6, 6, -3, 3, 0].map { NSValue(point: NSPoint(x: origin.x + $0, y: origin.y)) }
+        anim.duration = 0.4
+        panel.animations = ["frameOrigin": anim]
+        panel.animator().setFrameOrigin(origin)
     }
 
     // You count as looking if this exact tab is in front and you touched the keyboard or mouse in the last minute
@@ -145,7 +200,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         // Claude finished and is sitting at its input box
-        guard cards[id] == nil, let (front, sessions) = readSessions(),
+        guard cards[id] == nil, !dashboard.paused, let (front, sessions) = readSessions(),
               let s = sessions.first(where: { $0.id == id }), !isLooking(at: id, front: front) else { return }
         open(s, Prompt(kind: .idle, line: info["body"] ?? "Claude is waiting for your input"), detail: nil)
         relayout()
@@ -306,17 +361,15 @@ final class App: NSObject, NSApplicationDelegate {
         let result = NSAppleScript(source: "tell application \"iTerm2\"\n\(body)\nend tell")?.executeAndReturnError(&err)
         // -1743: you said no (or haven't been asked yet) to letting NotiApp control iTerm2
         let denied = (err?[NSAppleScript.errorNumber] as? Int) == -1743
-        warning.title = "⚠️ Allow NotiApp to control iTerm2…"
-        warning.isHidden = !denied
-        statusItem.button?.image = NSImage(systemSymbolName: denied ? "bell.slash" : "bell.badge", accessibilityDescription: "NotiApp")
+        if dashboard.accessDenied != denied { dashboard.accessDenied = denied }
         return err == nil ? result : nil
     }
 
-    @objc func openAutomationSettings() {
+    func openAutomationSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
     }
 
-    @objc func editPatterns() {
+    func editPatterns() {
         NSWorkspace.shared.open(patternsFile)
     }
 }

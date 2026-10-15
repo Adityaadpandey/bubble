@@ -161,3 +161,14 @@ func appleScriptString(_ s: String) -> String {
     flush()
     return parts.isEmpty ? "\"\"" : "(" + parts.joined(separator: " & ") + ")"
 }
+
+/// What Claude is busy with, from its spinner line, e.g.
+/// "✽ Cerebrating… (39s · ↓ 3.1k tokens)" gives "Cerebrating… 39s". Nil when it isn't working.
+func claudeActivity(_ screen: String) -> String? {
+    for l in screen.components(separatedBy: .newlines).suffix(15).reversed() {
+        if let m = l.firstMatch(of: #/^\s*\S\s+([A-Z][\w ]*…)\s*\((\d+[sm][^·)]*)/#) {
+            return "\(m.1) \(m.2.trimmingCharacters(in: .whitespaces))"
+        }
+    }
+    return nil
+}
