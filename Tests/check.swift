@@ -126,6 +126,12 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // settings: names stored by the pickers map to sizes, and an unknown or empty one falls back to how it always looked
+        precondition(Look.padding("compact") == 10 && Look.padding("roomy") == 18 && Look.padding("") == 14)
+        precondition(Look.textScale("large") == 1.15 && Look.textScale("small") == 0.9 && Look.textScale("normal") == 1)
+        precondition(Look.width("narrow") == 420...560 && Look.width("wide") == 600...860 && Look.width("whatever") == 510...720)
+        precondition(Prefs.defaults["nudgeSeconds"] as? Int == 120 && Prefs.defaults["sound"] as? String == "Glass")
+
         // dashboard status from Claude's spinner
         precondition(claudeActivity("⏺ done\n✽ Cerebrating… (39s · ↓ 3.1k tokens)\n───\n❯ \n") == "Cerebrating… 39s")
         precondition(claudeActivity("✻ Baking… (1m 20s · esc to interrupt)") == "Baking… 1m 20s")

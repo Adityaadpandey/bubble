@@ -126,6 +126,7 @@ final class App: NSObject, NSApplicationDelegate {
     let terminals = Terminals()
     var patterns: [NSRegularExpression] = []
     var hotKey: HotKey?
+    var appliedChoices = ""                   // Prefs.watchedChoices as of the last applyChoices()
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let dashboard = Dashboard()
     var dashPanel: NotchPanel?
@@ -197,7 +198,12 @@ final class App: NSObject, NSApplicationDelegate {
         // already connected to Claude Code but from an old copy of the app (moved, renamed): follow it quietly
         if ClaudeHooks.added && !ClaudeHooks.connected() { try? ClaudeHooks.connect() }
         dashboard.claudeConnected = ClaudeHooks.connected() || !ClaudeHooks.claudeInstalled
-        hotKey = HotKey(keyCode: 49, modifiers: controlKey | optionKey) { [weak self] in self?.summon() } // ⌃⌥Space
+        Prefs.register()
+        applyChoices()
+        // Settings writes straight to UserDefaults, so changes to the hotkey or the usage meters are noticed here
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.applyChoices()
+        }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             guard let self, !self.usageWaits, self.welcome == nil else { return }
@@ -205,6 +211,18 @@ final class App: NSObject, NSApplicationDelegate {
         }
         // the first time, nothing asks macOS for anything until the onboarding gets to it
         if defaults.bool(forKey: "onboarded") { refreshUsage() } else { showWelcome() }
+    }
+
+    // Redoes whatever depends on a setting that changed: the hotkey is registered again, the usage meters fetched again.
+    // Called on every UserDefaults change, so it does nothing unless one of those two actually changed.
+    func applyChoices() {
+        let now = Prefs.watchedChoices
+        guard now != appliedChoices else { return }
+        let first = appliedChoices.isEmpty
+        appliedChoices = now
+        hotKey = nil // the old one is unregistered as it goes
+        hotKey = Shortcut.hotKey(Prefs.string("shortcut")) { [weak self] in self?.summon() }
+        if !first { refreshUsage() }
     }
 
     // MARK: watching
@@ -269,10 +287,11 @@ final class App: NSObject, NSApplicationDelegate {
                 }
                 // Clicked but nothing changed on screen for a while, so let you try again
                 if card.sent != nil, Date().timeIntervalSince(card.sentAt) > 4 { card.sent = nil }
-                // still unanswered after 2 minutes, so nudge once more
-                if !card.repinged, !dashboard.paused, Date().timeIntervalSince(card.since) > 120 {
+                // still unanswered after the nudge time in Settings (2 minutes unless changed), so nudge once more
+                let nudge = Double(Prefs.int("nudgeSeconds"))
+                if !card.repinged, !dashboard.paused, nudge > 0, Date().timeIntervalSince(card.since) > nudge {
                     card.repinged = true
-                    NSSound(named: "Glass")?.play()
+                    Prefs.chime()
                     panels[s.id].map(shake)
                 }
             } else if let found, !typing, !dashboard.paused, !hidden.contains(s.id), !isLooking(at: s.id) {
@@ -515,7 +534,7 @@ final class App: NSObject, NSApplicationDelegate {
         order.append(id)
         relayout()
         panel.orderFrontRegardless()
-        NSSound(named: "Glass")?.play()
+        Prefs.chime()
     }
 
     var notchScreen: NSScreen? { NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main }

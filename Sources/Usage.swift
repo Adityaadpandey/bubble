@@ -74,15 +74,18 @@ enum UsageFetcher {
         let lock = NSLock()
         func add(_ u: Usage) { lock.lock(); results[u.id] = u; lock.unlock(); group.leave() }
 
-        group.enter()
-        claudeToken { login in
-            guard let login else { return add(Usage(id: "Claude", error: claudeDenied ? "Keychain access was denied" : "Sign in to Claude Code")) }
-            var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
-            req.setValue("Bearer \(login.token)", forHTTPHeaderField: "Authorization")
-            req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-            get(req, name: "Claude", plan: login.plan, signIn: "Open Claude Code to sign in again", parse: parseClaude, add)
+        // a meter you turned off in Settings is never fetched, so Claude's doesn't touch the Keychain either
+        if Prefs.bool("meter.Claude") {
+            group.enter()
+            claudeToken { login in
+                guard let login else { return add(Usage(id: "Claude", error: claudeDenied ? "Keychain access was denied" : "Sign in to Claude Code")) }
+                var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+                req.setValue("Bearer \(login.token)", forHTTPHeaderField: "Authorization")
+                req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+                get(req, name: "Claude", plan: login.plan, signIn: "Open Claude Code to sign in again", parse: parseClaude, add)
+            }
         }
-        if let auth = json("~/.codex/auth.json"), let tokens = auth["tokens"] as? [String: Any],
+        if Prefs.bool("meter.Codex"), let auth = json("~/.codex/auth.json"), let tokens = auth["tokens"] as? [String: Any],
            let token = tokens["access_token"] as? String {
             group.enter()
             var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
@@ -90,7 +93,7 @@ enum UsageFetcher {
             if let account = tokens["account_id"] as? String { req.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
             get(req, name: "Codex", plan: nil, signIn: "Open Codex to sign in again", parse: parseCodex, add)
         }
-        if let auth = json("~/.commandcode/auth.json"), let key = auth["apiKey"] as? String {
+        if Prefs.bool("meter.Command Code"), let auth = json("~/.commandcode/auth.json"), let key = auth["apiKey"] as? String {
             group.enter()
             var req = URLRequest(url: URL(string: "https://api.commandcode.ai/alpha/billing/credits")!)
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

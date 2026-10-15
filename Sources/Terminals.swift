@@ -210,7 +210,7 @@ final class Terminals {
     func readAll(_ done: @escaping ((fronts: [String], sessions: [Session])?) -> Void) {
         queue.async {
             var fronts: [String] = [], sessions: [Session] = [], failed = false
-            for app in [Self.iTerm, Self.terminal] {
+            for app in [Self.iTerm, Self.terminal] where Prefs.bool(app == Self.iTerm ? "watch.iterm" : "watch.terminal") {
                 // talking to an app would launch it, so only do it when it's already up
                 guard NSRunningApplication.runningApplications(withBundleIdentifier: app).first != nil else {
                     self.denied[app] = nil
@@ -234,7 +234,7 @@ final class Terminals {
             }
             // a tab that's only showing a tmux session is left out, its panes are listed on their own
             var attached = Set<String>()
-            for b in Self.backends {
+            for b in Self.backends where Prefs.bool("watch." + b.prefix.dropLast()) {
                 if let bundle = b.bundle, !isRunning(bundle) { continue }
                 guard let r = b.list() else { continue } // ponytail: a failed read drops that backend's cards for one tick, add a failed flag if it flickers
                 fronts += r.fronts
