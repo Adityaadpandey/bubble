@@ -22,7 +22,15 @@ curl -fsSL https://raw.githubusercontent.com/Adityaadpandey/notchy/main/install.
 
 That's it. It downloads the latest Notchy, puts it in Applications and opens it. Run the same line again any time to update.
 
-**Rather click than type?** Download `Notchy.dmg` from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest), open it and drag **Notchy** onto **Applications**. Notchy isn't notarized by Apple yet, so the first time you open it macOS says it can't check it: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. (The Terminal line above skips this step.)
+**Use Homebrew?**
+
+```sh
+brew install --cask adityaadpandey/tap/notchy
+```
+
+Update with `brew upgrade --cask notchy`, remove with `brew uninstall --cask notchy`.
+
+**Rather click than type?** Download `Notchy.dmg` from the [latest release](https://github.com/Adityaadpandey/notchy/releases/latest), open it and drag **Notchy** onto **Applications**. Notchy isn't notarized by Apple yet, so the first time you open it macOS says it can't check it: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. (The Terminal line and Homebrew both skip this step.)
 
 ### The first minute
 
@@ -61,7 +69,7 @@ make dmg       # builds build/Notchy.dmg, the drag-to-Applications installer
 make icon      # redraws the app icon from Tools/icon.swift
 ```
 
-To publish a new version, bump `CFBundleShortVersionString` in `Info.plist` and run `make release`. It uploads the zip and the disk image to a GitHub release, and the install line picks it up straight away.
+To publish a new version, bump `CFBundleShortVersionString` in `Info.plist` and run `make release`. It uploads the zip and the disk image to a GitHub release, and the install line picks it up straight away. It also bumps the Homebrew cask in [homebrew-tap](https://github.com/Adityaadpandey/homebrew-tap) to the new version and checksum (`make cask` does just that part).
 
 ## Uninstalling
 

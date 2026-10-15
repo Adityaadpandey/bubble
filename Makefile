@@ -43,6 +43,17 @@ dmg: build
 # the newest release's Notchy.zip, so bump the version in Info.plist before each release.
 release: dist dmg
 	gh release create v$(VERSION) build/Notchy.zip build/Notchy.dmg --title "Notchy $(VERSION)" --generate-notes
+	$(MAKE) cask
+
+# Points the Homebrew cask (github.com/Adityaadpandey/homebrew-tap) at this version's zip, so
+# `brew upgrade --cask notchy` picks it up, e.g. version "1.1" and that zip's sha256
+cask:
+	rm -rf build/tap
+	git clone -q https://github.com/Adityaadpandey/homebrew-tap.git build/tap
+	sed -i '' -e 's/^  version ".*"/  version "$(VERSION)"/' \
+		-e "s/^  sha256 \".*\"/  sha256 \"$$(shasum -a 256 build/Notchy.zip | cut -d' ' -f1)\"/" build/tap/Casks/notchy.rb
+	git -C build/tap commit -qam "notchy $(VERSION)"
+	git -C build/tap -c credential.helper='!gh auth git-credential' push -q
 
 install: build
 	pkill -x Notchy && sleep 1 || true
@@ -51,4 +62,4 @@ install: build
 	cp -R $(APP) ~/Applications/
 	open ~/Applications/Notchy.app
 
-.PHONY: build check icon dist dmg release install debug
+.PHONY: build check icon dist dmg release cask install debug
