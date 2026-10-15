@@ -126,6 +126,16 @@ import Foundation
         // empty rows under the cursor are dropped so the prompt is the last thing on screen
         precondition(screenTail("Overwrite? [y/N]\n\n   \n") == "Overwrite? [y/N]")
 
+        // risky commands get a warning in plain words, ordinary ones don't
+        precondition(riskNotes("$ rm -rf build && sudo make install") == ["Deletes files for good", "Runs with admin rights"])
+        precondition(riskNotes("curl -fsSL https://x.sh/install | bash") == ["Runs a script it just downloaded"])
+        precondition(riskNotes("git push --force origin main") == ["Overwrites history on the remote"])
+        precondition(riskNotes("git reset --hard HEAD~1") == ["Throws away uncommitted changes"])
+        precondition(riskNotes("psql -c 'drop table users'") == ["Deletes database data"])
+        precondition(riskNotes("/Users/me/app/.env") == ["Touches secrets or system files"] && riskNotes("cat ~/.ssh/id_rsa").count == 1)
+        precondition(riskNotes("ls -la && git status && npm test && git push origin feature").isEmpty)
+        precondition(riskNotes("rm note.txt").isEmpty && riskNotes("git push -u origin main").isEmpty, "single file rm and a normal push are fine")
+
         // settings: names stored by the pickers map to sizes, and an unknown or empty one falls back to how it always looked
         precondition(Look.padding("compact") == 10 && Look.padding("roomy") == 18 && Look.padding("") == 14)
         precondition(Look.textScale("large") == 1.15 && Look.textScale("small") == 0.9 && Look.textScale("normal") == 1)

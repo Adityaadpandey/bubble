@@ -17,7 +17,7 @@ debug: install
 
 check:
 	mkdir -p build
-	swiftc -parse-as-library Sources/Detect.swift Sources/Usage.swift Sources/Hooks.swift Sources/Panes.swift Sources/Prefs.swift Tests/check.swift -o build/check
+	swiftc -parse-as-library Sources/Detect.swift Sources/Usage.swift Sources/Hooks.swift Sources/Panes.swift Sources/Prefs.swift Sources/Risk.swift Tests/check.swift -o build/check
 	build/check
 
 # redraws Resources/AppIcon.icns from Tools/icon.swift

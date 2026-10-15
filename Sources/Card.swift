@@ -93,8 +93,11 @@ struct CardView: View {
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
     @FocusState private var cardFocused: Bool
+    @State private var confirming: Int? // the "don't ask again" row clicked once on a risky command
 
     private var p: Prompt { model.prompt }
+    // what's about to run or change, e.g. "$ rm -rf build", checked for the usual footguns
+    private var risks: [String] { riskNotes(([model.detail?.body ?? ""] + p.context).joined(separator: "\n")) }
     private var isClaude: Bool { p.kind == .menu || p.kind == .idle }
     // Claude's own "Type something" and "Chat about this" rows are what the reply box is for,
     // and unnumbered rows like "Next" get their own button below the choices
@@ -111,6 +114,7 @@ struct CardView: View {
             header
             if !p.tabs.isEmpty { tabStrip }
             context
+            riskBanner
             Text(p.line.isEmpty ? "Waiting for you" : p.line)
                 .font(.notchy(14.5, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
@@ -239,6 +243,19 @@ struct CardView: View {
         }
     }
 
+    // Red, between the command and the choices. After a first click on "don't ask again" it asks for a second.
+    @ViewBuilder private var riskBanner: some View {
+        if !risks.isEmpty {
+            Label(confirming == nil ? risks.joined(separator: " · ") : "Risky: click \"don't ask again\" once more to allow this for good",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.notchy(12, weight: .medium))
+                .foregroundStyle(Color.red)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.red.opacity(0.14)))
+        }
+    }
+
     private var replyBox: some View {
         HStack(spacing: 8) {
             TextField(isClaude ? "Reply to Claude…" : p.kind == .list ? "Type to filter or answer…" : "Type an answer…", text: $reply)
@@ -274,7 +291,16 @@ struct CardView: View {
 
     private func isNo(_ row: Row) -> Bool { row.label.hasPrefix("No") }
 
+    // "Yes, and don't ask again…" is the row that turns one approval into a standing one
+    private func isStanding(_ row: Row) -> Bool { row.label.localizedCaseInsensitiveContains("don't ask again") }
+
     private func pick(_ i: Int) {
+        // on a risky command that one takes two clicks, so a stray tap or a number key can't wave it through for good
+        if !risks.isEmpty, p.rows.indices.contains(i), isStanding(p.rows[i]), confirming != i {
+            confirming = i
+            return
+        }
+        confirming = nil
         if p.kind == .yesNo { act(.answer(i == 0 ? .yes : .no)) } else { act(.answer(.pick(i))) }
     }
 
