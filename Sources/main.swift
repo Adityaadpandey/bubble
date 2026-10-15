@@ -246,6 +246,7 @@ final class App: NSObject, NSApplicationDelegate {
     func refreshUsage() {
         dashboard.usageAt = Date()
         UsageFetcher.fetchAll { [weak self] usage in
+            log("usage " + usage.map { "\($0.id): \($0.error ?? $0.limits.map { "\($0.label) \(Int($0.used * 100))%" }.joined(separator: ", "))" }.joined(separator: " · "))
             guard let self, usage != self.dashboard.usage else { return }
             self.dashboard.usage = usage
         }
