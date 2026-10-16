@@ -13,9 +13,32 @@ if CommandLine.arguments.dropFirst().first == "notify" {
     guard let session = hookSession(ProcessInfo.processInfo.environment) ?? controllingTTY() else { exit(0) }
     let words = CommandLine.arguments.dropFirst(2).joined(separator: " ")
     DistributedNotificationCenter.default().postNotificationName(
-        hookNote, object: session, userInfo: ["kind": "idle", "body": words.isEmpty ? "Finished and waiting for you" : words],
+        hookNote, object: session, userInfo: ["kind": "idle", "body": words.isEmpty ? "Finished and waiting for you" : words,
+                   "place": placeLabel(FileManager.default.currentDirectoryPath)],
         deliverImmediately: true)
     exit(0)
+}
+
+// e.g. "notiapp · main" for a folder inside a git checkout, "Downloads" for one that isn't.
+// Reads .git/HEAD by hand (no git process), walking up so a subfolder like src/ still finds the repo.
+// A worktree's .git is a file ("gitdir: /repo/.git/worktrees/x"), so follow that. Detached HEAD shows the short hash.
+func placeLabel(_ cwd: String) -> String {
+    var dir = URL(fileURLWithPath: cwd)
+    let folder = dir.lastPathComponent
+    for _ in 0..<12 {
+        var git = dir.appendingPathComponent(".git")
+        if let pointer = try? String(contentsOf: git, encoding: .utf8), pointer.hasPrefix("gitdir:") {
+            git = URL(fileURLWithPath: String(pointer.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: dir)
+        }
+        if let head = try? String(contentsOf: git.appendingPathComponent("HEAD"), encoding: .utf8) {
+            let ref = head.trimmingCharacters(in: .whitespacesAndNewlines)
+            let branch = ref.hasPrefix("ref: refs/heads/") ? String(ref.dropFirst(16)) : String(ref.prefix(7))
+            return "\(folder) · \(branch)"
+        }
+        if dir.path == "/" { break }
+        dir.deleteLastPathComponent()
+    }
+    return folder
 }
 
 // Hook mode: Claude Code runs `Notchy hook` with the event JSON on stdin.
@@ -61,6 +84,7 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     default:
         exit(0)
     }
+    if let cwd = obj["cwd"] as? String { info["place"] = placeLabel(cwd) }
     DistributedNotificationCenter.default().postNotificationName(hookNote, object: session, userInfo: info, deliverImmediately: true)
     exit(0)
 }
@@ -117,6 +141,7 @@ final class App: NSObject, NSApplicationDelegate {
     var order: [String] = []                  // oldest card on top, newer ones stack below it
     var hidden: Set<String> = []              // you pressed ✕, stays hidden until that prompt is gone
     var details: [String: Detail] = [:]       // latest tool call per session, from the hook
+    var places: [String: String] = [:]        // "folder · branch" per session, from the hook
     var changed: [String: (tail: String, at: Date)] = [:] // when each tab's screen last changed
     var inFlight: [String: Int] = [:]         // answers whose keys haven't all landed yet
     var typedAt: [String: Date] = [:]         // when our last keys finished landing in each tab
@@ -516,6 +541,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     @objc func hook(_ note: Notification) {
         guard let id = note.object as? String, let info = note.userInfo as? [String: String] else { return }
+        if let place = info["place"] { places[id] = place; cards[id]?.place = place }
         if info["kind"] == "detail" {
             let d = Detail(title: info["title"] ?? "", body: info["body"] ?? "",
                            diff: (info["diff"] ?? "").split(separator: "\n").map(String.init))
@@ -533,6 +559,7 @@ final class App: NSObject, NSApplicationDelegate {
     func open(_ s: Session, _ prompt: Prompt, detail: Detail?) {
         log("open \(s.id) \(prompt.kind) \(prompt.line.debugDescription) rows \(prompt.rows.map(\.label)) cursor \(prompt.cursor)")
         let card = CardModel(session: s.id, title: s.name, prompt: prompt, detail: detail)
+        card.place = places[s.id] ?? ""
         card.snapshot = s.tail
         // decided before the card is drawn, so it opens already in its notch shape
         card.docked = order.isEmpty

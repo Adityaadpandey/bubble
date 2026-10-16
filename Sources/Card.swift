@@ -17,6 +17,7 @@ final class CardModel: ObservableObject {
     let session: String
     let since = Date()
     @Published var title: String
+    @Published var place = ""       // "folder · branch" of the project Claude is working in, e.g. "notiapp · main"
     @Published var prompt: Prompt
     @Published var detail: Detail?
     @Published var sent: Prompt?  // what we last answered, the card dims until the screen moves on
@@ -187,6 +188,9 @@ struct CardView: View {
                 .font(.notchy(11, weight: .bold))
                 .foregroundStyle(isClaude ? Color.orange : .secondary)
             Text(model.title).font(.notchy(12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            if !model.place.isEmpty {
+                Text(model.place).font(.notchy(11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+            }
             Spacer()
             iconButton("arrow.up.forward.app", help: "Open the tab") { act(.open) }
             iconButton("xmark", help: "Hide this card, the prompt stays in the terminal") { act(.close) }
