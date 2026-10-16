@@ -74,7 +74,7 @@ struct SettingsView: View {
             } header: {
                 Text("Watch these terminals")
             } footer: {
-                Text("One you turn off is never read, and macOS won't ask to let Notchy control it.")
+                Text("One you turn off is never read, and macOS won't ask to let Bubble control it.")
             }
 
             Section("Show usage for") {
@@ -114,7 +114,7 @@ struct SettingsView: View {
     }
 }
 
-// What you answered from the notch, newest first, e.g. "Claude Code · notchy   Yes   rm -rf build"
+// What you answered from the notch, newest first, e.g. "Claude Code · bubble   Yes   rm -rf build"
 private struct HistoryView: View {
     @ObservedObject private var history = History.shared
 

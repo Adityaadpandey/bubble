@@ -4,10 +4,10 @@ import Carbon
 import Combine
 import SwiftUI
 
-let hookNote = Notification.Name("dev.notchy.hook")
-let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notchy/patterns.txt")
+let hookNote = Notification.Name("dev.bubble.hook")
+let patternsFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/bubble/patterns.txt")
 
-// Notify mode: `Notchy notify "pi finished"` for tools that have no Claude-style hooks but can run a command when
+// Notify mode: `Bubble notify "pi finished"` for tools that have no Claude-style hooks but can run a command when
 // they're done, like pi's agent_settled event or Codex's `notify` setting. It lands as the same "waiting on you" card.
 if CommandLine.arguments.dropFirst().first == "notify" {
     guard let session = hookSession(ProcessInfo.processInfo.environment) ?? controllingTTY() else { exit(0) }
@@ -41,7 +41,7 @@ func placeLabel(_ cwd: String) -> String {
     return folder
 }
 
-// Hook mode: Claude Code runs `Notchy hook` with the event JSON on stdin.
+// Hook mode: Claude Code runs `Bubble hook` with the event JSON on stdin.
 // We boil it down to a few strings, hand them to the running app and exit right away,
 // so Claude never waits on us and shows its own prompt as usual.
 if CommandLine.arguments.dropFirst().first == "hook" {
@@ -89,7 +89,7 @@ if CommandLine.arguments.dropFirst().first == "hook" {
     exit(0)
 }
 
-// The id Notchy lists the pane Claude runs in under, from the variables its terminal sets, e.g.
+// The id Bubble lists the pane Claude runs in under, from the variables its terminal sets, e.g.
 //   TMUX_PANE=%5                           → "tmux:%5"
 //   KITTY_WINDOW_ID=7, KITTY_LISTEN_ON=unix:/tmp/kitty-123 → "kitty:/tmp/kitty-123#7"
 //   WEZTERM_PANE=4                         → "wezterm:4"
@@ -121,9 +121,9 @@ func controllingTTY() -> String? {
     return nil
 }
 
-// ~/Library/Logs/Notchy.log, one line per card opened or closed and per answer sent, e.g.
+// ~/Library/Logs/Bubble.log, one line per card opened or closed and per answer sent, e.g.
 //   2026-10-15T19:07:12Z answer 3B3A… pick(1) keys ["\u{1B}[B", "\r"] trusted card: false
-let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Notchy.log")
+let logURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Bubble.log")
 func log(_ message: String) {
     let line = "\(Date().formatted(.iso8601)) \(message)\n"
     guard let h = try? FileHandle(forWritingTo: logURL) else {
@@ -182,8 +182,8 @@ final class App: NSObject, NSApplicationDelegate {
 
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
             try? FileManager.default.createDirectory(at: patternsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-            // bring your patterns along from when Notchy was called Perch, or NotiApp before that
-            for name in ["perch", "notiapp"] {
+            // bring your patterns along from when Bubble was called Notchy, or Perch and NotiApp before that
+            for name in ["notchy", "perch", "notiapp"] {
                 let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/\(name)/patterns.txt")
                 if (try? FileManager.default.moveItem(at: old, to: patternsFile)) != nil { break }
             }
@@ -197,7 +197,7 @@ final class App: NSObject, NSApplicationDelegate {
         #if DEBUG
         // Test builds only (make debug): lets a script click cards. Never in a normal build, since any app
         // on the Mac could post this and type into your terminal.
-        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.notchy.debug"), object: nil, queue: .main) { [weak self] n in
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.bubble.debug"), object: nil, queue: .main) { [weak self] n in
             guard let self, let id = n.object as? String, let what = n.userInfo?["do"] as? String else { return }
             if self.cards[id] == nil { self.pick(id) }
             let parts = what.split(separator: ":", maxSplits: 1).map(String.init)
@@ -350,7 +350,7 @@ final class App: NSObject, NSApplicationDelegate {
         if dashboard.pausedUntil != nil, !dashboard.paused { dashboard.pausedUntil = nil } // the hour is up
         let waiting = dashboard.waiting
         let symbol = dashboard.paused || dashboard.accessDenied ? "bell.slash" : waiting > 0 ? "bell.fill" : "bell"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Notchy")?
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Bubble")?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
         image?.isTemplate = true
         guard let button = statusItem.button else { return }
@@ -359,7 +359,7 @@ final class App: NSObject, NSApplicationDelegate {
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
             .baselineOffset: 0.5,
         ])
-        button.setAccessibilityLabel(waiting > 0 ? "Notchy, \(waiting) waiting" : "Notchy")
+        button.setAccessibilityLabel(waiting > 0 ? "Bubble, \(waiting) waiting" : "Bubble")
     }
 
     // The dashboard drops out of the notch, the same way cards do, and folds back in when you click away or press Esc
@@ -417,7 +417,7 @@ final class App: NSObject, NSApplicationDelegate {
         panel.setFrameOrigin(NSPoint(x: screen.frame.midX - panel.frame.width / 2, y: screen.frame.maxY - panel.frame.height))
     }
 
-    // First-run setup out of the notch, or again from ⋯ → Welcome to Notchy. While it's up, tabs aren't read
+    // First-run setup out of the notch, or again from ⋯ → Welcome to Bubble. While it's up, tabs aren't read
     // and usage isn't fetched, so the only macOS dialogs are the ones you click a button for.
     // Clicking elsewhere (or a macOS dialog taking focus) leaves it open, only Later, Esc or Finish close it.
     func showWelcome() {
@@ -733,7 +733,7 @@ final class App: NSObject, NSApplicationDelegate {
     func showSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-            window.title = "Notchy Settings"
+            window.title = "Bubble Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()

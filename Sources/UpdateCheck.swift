@@ -15,7 +15,7 @@ func isNewer(_ latest: String, than current: String) -> Bool {
 // Only ever called when you've turned "Check for updates" on in Settings, and it sends nothing about you.
 enum UpdateCheck {
     static func newer(than current: String, _ done: @escaping ((version: String, page: URL)?) -> Void) {
-        var req = URLRequest(url: URL(string: "https://api.github.com/repos/Adityaadpandey/notchy/releases/latest")!)
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/Adityaadpandey/bubble/releases/latest")!)
         req.timeoutInterval = 10
         URLSession.shared.dataTask(with: req) { data, _, _ in
             let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }

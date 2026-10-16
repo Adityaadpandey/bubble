@@ -44,7 +44,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if model.accessDenied {
                 Button(action: openSettings) {
-                    Label("Allow Notchy to control your terminal…", systemImage: "exclamationmark.triangle.fill")
+                    Label("Allow Bubble to control your terminal…", systemImage: "exclamationmark.triangle.fill")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain).foregroundStyle(.orange).padding(12)
@@ -55,7 +55,7 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Connect Claude Code", systemImage: "link")
                         Text("Shows the diff or command on each card, and pings you when Claude is done")
-                            .font(.notchy(11)).foregroundStyle(.secondary)
+                            .font(.bubble(11)).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -65,7 +65,7 @@ struct DashboardView: View {
 
             if busy.isEmpty {
                 Label("Nothing needs you", systemImage: "checkmark.circle")
-                    .font(.notchy(12)).foregroundStyle(.secondary)
+                    .font(.bubble(12)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 ScrollView {
@@ -110,17 +110,17 @@ struct DashboardView: View {
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
                     Divider()
-                    Button("Welcome to Notchy…", action: welcome)
-                    Button("About Notchy") {
+                    Button("Welcome to Bubble…", action: welcome)
+                    Button("About Bubble") {
                         NSApp.activate()
                         NSApp.orderFrontStandardAboutPanel(nil)
                     }
-                    Button("Quit Notchy") { NSApp.terminate(nil) }
+                    Button("Quit Bubble") { NSApp.terminate(nil) }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
             .buttonStyle(.borderless)
-            .font(.notchy(12))
+            .font(.bubble(12))
             .padding(10)
         }
         .modifier(NotchChrome(docked: true, notch: model.notch, leaving: model.leaving))
@@ -137,8 +137,8 @@ struct TabRow: View {
             HStack(spacing: 10) {
                 Circle().fill(tab.state == .waiting ? Color.orange : .blue).frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.name).font(.notchy(12.5, weight: .medium)).lineLimit(1)
-                    Text(tab.note).font(.notchy(11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(tab.name).font(.bubble(12.5, weight: .medium)).lineLimit(1)
+                    Text(tab.note).font(.bubble(11)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
             }
@@ -160,14 +160,14 @@ struct UsageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(usage.id).font(.notchy(12, weight: .semibold))
+                Text(usage.id).font(.bubble(12, weight: .semibold))
                 if let plan = usage.plan {
-                    Text(plan).font(.notchy(10, weight: .medium)).foregroundStyle(.secondary)
+                    Text(plan).font(.bubble(10, weight: .medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background(Capsule().fill(Color.primary.opacity(0.08)))
                 }
                 Spacer()
-                if let e = usage.error { Text(e).font(.notchy(11)).foregroundStyle(.secondary) }
+                if let e = usage.error { Text(e).font(.bubble(11)).foregroundStyle(.secondary) }
             }
             ForEach(usage.limits, id: \.label) { l in
                 HStack(spacing: 8) {
@@ -181,7 +181,7 @@ struct UsageRow: View {
                     Text("\(Int((l.used * 100).rounded()))%").monospacedDigit().frame(width: 34, alignment: .trailing)
                     Text(l.resetsAt.map { "resets " + short($0) } ?? "").foregroundStyle(.tertiary).frame(width: 64, alignment: .leading)
                 }
-                .font(.notchy(11))
+                .font(.bubble(11))
                 .accessibilityElement(children: .combine)
             }
         }

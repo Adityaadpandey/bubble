@@ -41,7 +41,7 @@ final class CardModel: ObservableObject {
 }
 
 // A see-through window that hangs from the notch, above the menu bar, every app and full screen spaces.
-// It never activates Notchy, so whatever you were typing in keeps focus until you click into it.
+// It never activates Bubble, so whatever you were typing in keeps focus until you click into it.
 class NotchPanel: NSPanel {
     var dismiss: (() -> Void)? // clicked away or pressed Esc, for windows that should just go away then
 
@@ -117,7 +117,7 @@ struct CardView: View {
             context
             riskBanner
             Text(p.line.isEmpty ? "Waiting for you" : p.line)
-                .font(.notchy(14.5, weight: .semibold))
+                .font(.bubble(14.5, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
             if !visibleRows.isEmpty {
                 VStack(spacing: 6) {
@@ -141,7 +141,7 @@ struct CardView: View {
             }
             if model.failed {
                 Label("Couldn't type that into the terminal. Try again, or open the tab.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.notchy(12)).foregroundStyle(.red)
+                    .font(.bubble(12)).foregroundStyle(.red)
             }
             replyBox
             if model.keyboard { keyboardHint }
@@ -185,11 +185,11 @@ struct CardView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: isClaude ? "sparkle" : "terminal")
-                .font(.notchy(11, weight: .bold))
+                .font(.bubble(11, weight: .bold))
                 .foregroundStyle(isClaude ? Color.orange : .secondary)
-            Text(model.title).font(.notchy(12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            Text(model.title).font(.bubble(12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if !model.place.isEmpty {
-                Text(model.place).font(.notchy(11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                Text(model.place).font(.bubble(11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
             iconButton("arrow.up.forward.app", help: "Open the tab") { act(.open) }
@@ -199,7 +199,7 @@ struct CardView: View {
 
     private func iconButton(_ symbol: String, help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.notchy(11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.bubble(11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
         .help(help).accessibilityLabel(help)
@@ -211,10 +211,10 @@ struct CardView: View {
             Button { act(.answer(.prevTab)) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
             ForEach(p.tabs, id: \.label) { t in
                 HStack(spacing: 3) {
-                    if t.done { Image(systemName: "checkmark").font(.notchy(9, weight: .bold)) }
+                    if t.done { Image(systemName: "checkmark").font(.bubble(9, weight: .bold)) }
                     Text(t.label).lineLimit(1)
                 }
-                .font(.notchy(11, weight: .medium))
+                .font(.bubble(11, weight: .medium))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(t.done ? Color.green.opacity(0.18) : Color.primary.opacity(0.07)))
                 .foregroundStyle(t.done ? Color.green : .secondary)
@@ -229,11 +229,11 @@ struct CardView: View {
         if model.detail != nil || !lines.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 if let d = model.detail {
-                    Text(d.title).font(.notchy(11, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, 2)
+                    Text(d.title).font(.bubble(11, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, 2)
                 }
                 ForEach(Array(lines.prefix(14).enumerated()), id: \.offset) { _, l in
                     Text(l)
-                        .font(.notchy(11.5, design: .monospaced))
+                        .font(.bubble(11.5, design: .monospaced))
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
@@ -252,7 +252,7 @@ struct CardView: View {
         if !risks.isEmpty {
             Label(confirming == nil ? risks.joined(separator: " · ") : "Risky: click \"don't ask again\" once more to allow this for good",
                   systemImage: "exclamationmark.triangle.fill")
-                .font(.notchy(12, weight: .medium))
+                .font(.bubble(12, weight: .medium))
                 .foregroundStyle(Color.red)
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -268,7 +268,7 @@ struct CardView: View {
                 .onSubmit(send)
                 .onKeyPress(.escape) { act(.release); return .handled }
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.notchy(20))
+                Image(systemName: "arrow.up.circle.fill").font(.bubble(20))
             }
             .buttonStyle(.plain)
             .foregroundStyle(reply.isEmpty ? Color.secondary : Look.accent)
@@ -281,12 +281,12 @@ struct CardView: View {
 
     private var keyboardHint: some View {
         Text("1–9 pick · Y/N · ←/→ questions · Tab reply · Esc hide")
-            .font(.notchy(10.5)).foregroundStyle(.tertiary)
+            .font(.bubble(10.5)).foregroundStyle(.tertiary)
     }
 
     private var sentBadge: some View {
         Label("Sent", systemImage: "checkmark.circle.fill")
-            .font(.notchy(12, weight: .semibold))
+            .font(.bubble(12, weight: .semibold))
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Capsule().fill(Color.green))
             .foregroundStyle(.white)
@@ -329,7 +329,7 @@ struct RowButton: View {
             HStack(spacing: 10) {
                 if showKey {
                     Text("\(number)")
-                        .font(.notchy(11, weight: .semibold, design: .rounded))
+                        .font(.bubble(11, weight: .semibold, design: .rounded))
                         .frame(width: 20, height: 20)
                         .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Look.accent.opacity(0.25)))
                 }
@@ -343,7 +343,7 @@ struct RowButton: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.notchy(13))
+            .font(.bubble(13))
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.primary.opacity(hover ? 0.12 : 0.05)))

@@ -19,7 +19,7 @@ final class Terminals {
         return b.bundle.map { $0 == front } ?? terminalApps.contains(front)
     }
 
-    let queue = DispatchQueue(label: "notchy.terminals")
+    let queue = DispatchQueue(label: "bubble.terminals")
     var onDenied: (Bool) -> Void = { _ in }
     private var denied: [String: Bool] = [:] // per app, only touched on `queue`
     private let scripts: [String: NSAppleScript]
@@ -281,7 +281,7 @@ final class Terminals {
 
         var err: NSDictionary?
         let result = script.executeAppleEvent(event, error: &err)
-        // -1743: you said no (or haven't been asked yet) to letting Notchy control this app
+        // -1743: you said no (or haven't been asked yet) to letting Bubble control this app
         denied[app] = (err?[NSAppleScript.errorNumber] as? Int) == -1743
         return err == nil ? result : nil
     }

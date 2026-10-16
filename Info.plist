@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Notchy</string>
+	<string>Bubble</string>
 	<key>CFBundleExecutable</key>
-	<string>Notchy</string>
+	<string>Bubble</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.notchy.Notchy</string>
+	<string>dev.bubble.Bubble</string>
 	<key>CFBundleName</key>
-	<string>Notchy</string>
+	<string>Bubble</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,7 +23,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Notchy reads your iTerm2 and Terminal tabs to spot prompts waiting on you, and types your answer back into them.</string>
+	<string>Bubble reads your iTerm2 and Terminal tabs to spot prompts waiting on you, and types your answer back into them.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Lives in your notch and answers your terminal.</string>
 </dict>

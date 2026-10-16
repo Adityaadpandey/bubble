@@ -1,4 +1,4 @@
-APP = build/Notchy.app
+APP = build/Bubble.app
 VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
 
 build:
@@ -6,9 +6,9 @@ build:
 	cp Info.plist $(APP)/Contents/
 	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	# one app for Apple silicon and Intel Macs, running on macOS 14 Sonoma and later
-	swiftc -O $(SWIFTFLAGS) -target arm64-apple-macos14.0 Sources/*.swift -o build/Notchy-arm64
-	swiftc -O $(SWIFTFLAGS) -target x86_64-apple-macos14.0 Sources/*.swift -o build/Notchy-x86_64
-	lipo -create build/Notchy-arm64 build/Notchy-x86_64 -output $(APP)/Contents/MacOS/Notchy
+	swiftc -O $(SWIFTFLAGS) -target arm64-apple-macos14.0 Sources/*.swift -o build/Bubble-arm64
+	swiftc -O $(SWIFTFLAGS) -target x86_64-apple-macos14.0 Sources/*.swift -o build/Bubble-x86_64
+	lipo -create build/Bubble-arm64 build/Bubble-x86_64 -output $(APP)/Contents/MacOS/Bubble
 	codesign --force --sign - $(APP)
 
 # same as install, plus a test-only hook scripts can use to click cards
@@ -27,33 +27,34 @@ icon:
 	build/icon build/AppIcon.iconset
 	iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
 
-# build/Notchy.zip, ready to send to someone (see "Installing" in the README for opening it the first time)
+# build/Bubble.zip, ready to send to someone (see "Installing" in the README for opening it the first time)
 dist: build
-	ditto -c -k --keepParent $(APP) build/Notchy.zip
+	ditto -c -k --keepParent $(APP) build/Bubble.zip
 
 # Publishes the zip on GitHub as v<CFBundleShortVersionString> from Info.plist. install.sh always fetches
-# the newest release's Notchy.zip, so bump the version in Info.plist before each release.
-# No disk image: Notchy isn't notarized, so anything opened from a browser download gets the
+# the newest release's Bubble.zip, so bump the version in Info.plist before each release.
+# No disk image: Bubble isn't notarized, so anything opened from a browser download gets the
 # "Apple could not verify" warning. The curl and brew installs never do, so those are the only ways in.
 release: dist
-	gh release create v$(VERSION) build/Notchy.zip --title "Notchy $(VERSION)" --generate-notes
+	gh release create v$(VERSION) build/Bubble.zip --title "Bubble $(VERSION)" --generate-notes
 	$(MAKE) cask
 
 # Points the Homebrew cask (github.com/Adityaadpandey/homebrew-tap) at this version's zip, so
-# `brew upgrade --cask notchy` picks it up, e.g. version "1.1" and that zip's sha256
+# `brew upgrade --cask bubble` picks it up, e.g. version "1.1" and that zip's sha256
 cask:
 	rm -rf build/tap
 	git clone -q https://github.com/Adityaadpandey/homebrew-tap.git build/tap
 	sed -i '' -e 's/^  version ".*"/  version "$(VERSION)"/' \
-		-e "s/^  sha256 \".*\"/  sha256 \"$$(shasum -a 256 build/Notchy.zip | cut -d' ' -f1)\"/" build/tap/Casks/notchy.rb
-	git -C build/tap commit -qam "notchy $(VERSION)"
+		-e "s/^  sha256 \".*\"/  sha256 \"$$(shasum -a 256 build/Bubble.zip | cut -d' ' -f1)\"/" build/tap/Casks/bubble.rb
+	git -C build/tap commit -qam "bubble $(VERSION)"
 	git -C build/tap -c credential.helper='!gh auth git-credential' push -q
 
 install: build
+	pkill -x Bubble && sleep 1 || true
 	pkill -x Notchy && sleep 1 || true
 	pkill -x Perch && sleep 1 || true
-	rm -rf ~/Applications/Notchy.app ~/Applications/Perch.app
+	rm -rf ~/Applications/Bubble.app ~/Applications/Notchy.app ~/Applications/Perch.app
 	cp -R $(APP) ~/Applications/
-	open ~/Applications/Notchy.app
+	open ~/Applications/Bubble.app
 
 .PHONY: build check icon dist release cask install debug

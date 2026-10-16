@@ -3,7 +3,7 @@ import Carbon
 import ServiceManagement
 import SwiftUI
 
-// The first time Notchy opens it drops this out of the notch and walks you through setting up.
+// The first time Bubble opens it drops this out of the notch and walks you through setting up.
 // Each macOS permission is asked for only when you click its button, never all at once on launch:
 //   Welcome → Your terminal → Claude Code → Usage limits → Done
 // The two Claude steps only show up when Claude Code is installed.
@@ -114,8 +114,8 @@ struct OnboardingView: View {
 
     private var title: String {
         switch model.step {
-        case .welcome: "Welcome to Notchy"
-        case .terminal: "Let Notchy see your terminal"
+        case .welcome: "Welcome to Bubble"
+        case .terminal: "Let Bubble see your terminal"
         case .claude: "Connect Claude Code"
         case .usage: "See how much of your plan is left"
         case .done: "You're all set"
@@ -125,13 +125,13 @@ struct OnboardingView: View {
     private var text: String {
         switch model.step {
         case .welcome:
-            "When Claude Code or any other CLI stops to ask you something, the question drops out of the notch right here. Click an answer and Notchy types it into the right tab."
+            "When Claude Code or any other CLI stops to ask you something, the question drops out of the notch right here. Click an answer and Bubble types it into the right tab."
         case .terminal:
-            "Notchy reads your terminal tabs to spot questions, and types your answers back into them. Nothing leaves your Mac. Click Allow for each one you use, then OK when macOS asks."
+            "Bubble reads your terminal tabs to spot questions, and types your answers back into them. Nothing leaves your Mac. Click Allow for each one you use, then OK when macOS asks."
         case .claude:
-            "Cards then show the exact command or diff you're approving, and Notchy pings you when Claude finishes. This adds two hooks to Claude Code's settings, leaves your other hooks alone, and backs the file up first."
+            "Cards then show the exact command or diff you're approving, and Bubble pings you when Claude finishes. This adds two hooks to Claude Code's settings, leaves your other hooks alone, and backs the file up first."
         case .usage:
-            "The dashboard shows your 5-hour and weekly limits. For Claude, macOS asks once to let Notchy read Claude Code's login from your Keychain: choose Always Allow. It's only ever sent to Claude's own servers."
+            "The dashboard shows your 5-hour and weekly limits. For Claude, macOS asks once to let Bubble read Claude Code's login from your Keychain: choose Always Allow. It's only ever sent to Claude's own servers."
         case .done:
             "Hover over the notch any time to see what's waiting, what's running, and how much of each plan is left."
         }
@@ -147,9 +147,9 @@ struct OnboardingView: View {
             Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         case .done:
             HStack {
-                Text("Open Notchy at login").font(.system(size: 13, weight: .medium))
+                Text("Open Bubble at login").font(.system(size: 13, weight: .medium))
                 Spacer()
-                Toggle("Open Notchy at login", isOn: $login).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                Toggle("Open Bubble at login", isOn: $login).labelsHidden().toggleStyle(.switch).controlSize(.small)
                     .onChange(of: login) { _, on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
             }
             .padding(.horizontal, 12).padding(.vertical, 9)

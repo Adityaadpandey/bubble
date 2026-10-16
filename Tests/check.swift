@@ -179,9 +179,9 @@ import Foundation
         precondition(parseCodex(Data("{}".utf8)) == nil && parseCommandCode(Data("not json".utf8)) == nil)
 
         // connecting Claude Code: other hooks stay, an old NotiApp entry is swapped for this app, and doing it twice changes nothing
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("notchy-check-settings.json")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bubble-check-settings.json")
         try? FileManager.default.removeItem(at: file)
-        try? FileManager.default.removeItem(at: file.appendingPathExtension("before-notchy"))
+        try? FileManager.default.removeItem(at: file.appendingPathExtension("before-bubble"))
         try! Data(#"{"model":"opus","hooks":{"Notification":[{"hooks":[{"type":"command","command":"/x/cc-status"}]},{"hooks":[{"type":"command","command":"/Users/me/Applications/NotiApp.app/Contents/MacOS/NotiApp hook"}]}]}}"#.utf8).write(to: file)
         precondition(!ClaudeHooks.connected(file))
         try! ClaudeHooks.connect(file)
@@ -191,8 +191,8 @@ import Foundation
         let notify = hooks["Notification"]!.flatMap { $0["hooks"] as! [[String: String]] }.map { $0["command"]! }
         precondition(notify == ["/x/cc-status", ClaudeHooks.command], "\(notify)")
         precondition(hooks["PermissionRequest"]!.count == 1 && saved["model"] as? String == "opus" && ClaudeHooks.connected(file))
-        precondition(FileManager.default.fileExists(atPath: file.appendingPathExtension("before-notchy").path))
-        // disconnecting takes only Notchy's hooks out: the other tool's stays, and an event that was only Notchy's goes
+        precondition(FileManager.default.fileExists(atPath: file.appendingPathExtension("before-bubble").path))
+        // disconnecting takes only Bubble's hooks out: the other tool's stays, and an event that was only Bubble's goes
         try! ClaudeHooks.disconnect(file)
         let after = try! JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         let left = after["hooks"] as! [String: [[String: Any]]]

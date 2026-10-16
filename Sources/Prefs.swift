@@ -7,7 +7,7 @@ enum Prefs {
     static let defaults: [String: Any] = [
         "nudgeSeconds": 120,     // how long a prompt waits before the second ping, 0 = never
         "sound": "Glass",        // a macOS system sound by name, "" = silent
-        "updates.check": false,  // off: Notchy never talks to GitHub unless you turn this on
+        "updates.check": false,  // off: Bubble never talks to GitHub unless you turn this on
         "quiet.on": false, "quiet.from": 22, "quiet.to": 8, // no chime between these hours
         "shortcut": "ctrlOptSpace",
         "watch.iterm": true, "watch.terminal": true, "watch.tmux": true, "watch.kitty": true, "watch.wezterm": true,
@@ -66,8 +66,8 @@ enum Look {
 }
 
 extension Font {
-    /// `.system(size:)` that follows the text size setting, e.g. .notchy(12) is 13.8pt on large.
-    static func notchy(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+    /// `.system(size:)` that follows the text size setting, e.g. .bubble(12) is 13.8pt on large.
+    static func bubble(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         .system(size: size * Look.textScale, weight: weight, design: design)
     }
 }

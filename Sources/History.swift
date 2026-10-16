@@ -1,7 +1,7 @@
 import Foundation
 
-// What you answered from the notch, newest first, kept in ~/.config/notchy/history.json so "why did that run?" has an answer.
-// e.g. "14:02 · Claude Code · notchy · Bash · rm -rf build → Yes". Typed replies are never stored, only that one was sent.
+// What you answered from the notch, newest first, kept in ~/.config/bubble/history.json so "why did that run?" has an answer.
+// e.g. "14:02 · Claude Code · bubble · Bash · rm -rf build → Yes". Typed replies are never stored, only that one was sent.
 struct HistoryEntry: Codable, Identifiable, Equatable {
     var id = UUID()
     let at: Date
@@ -23,7 +23,7 @@ func answerLabel(_ a: Answer, in p: Prompt) -> String? {
 final class History: ObservableObject {
     static let shared = History()
     static let limit = 200
-    private let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/notchy/history.json")
+    private let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/bubble/history.json")
     @Published private(set) var entries: [HistoryEntry] = []
 
     init() {
