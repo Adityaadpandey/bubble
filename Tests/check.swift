@@ -178,11 +178,11 @@ import Foundation
         precondition(claude[0].resetsAt != nil && parseClaude(Data("{}".utf8)) == nil)
         precondition(parseCodex(Data("{}".utf8)) == nil && parseCommandCode(Data("not json".utf8)) == nil)
 
-        // connecting Claude Code: other hooks stay, an old NotiApp entry is swapped for this app, and doing it twice changes nothing
+        // connecting Claude Code: other hooks stay, old NotiApp and Notchy entries are swapped for this app, and doing it twice changes nothing
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("bubble-check-settings.json")
         try? FileManager.default.removeItem(at: file)
         try? FileManager.default.removeItem(at: file.appendingPathExtension("before-bubble"))
-        try! Data(#"{"model":"opus","hooks":{"Notification":[{"hooks":[{"type":"command","command":"/x/cc-status"}]},{"hooks":[{"type":"command","command":"/Users/me/Applications/NotiApp.app/Contents/MacOS/NotiApp hook"}]}]}}"#.utf8).write(to: file)
+        try! Data(#"{"model":"opus","hooks":{"PermissionRequest":[{"hooks":[{"type":"command","command":"/Applications/Notchy.app/Contents/MacOS/Notchy hook"}]}],"Notification":[{"hooks":[{"type":"command","command":"/x/cc-status"}]},{"hooks":[{"type":"command","command":"/Users/me/Applications/NotiApp.app/Contents/MacOS/NotiApp hook"}]}]}}"#.utf8).write(to: file)
         precondition(!ClaudeHooks.connected(file))
         try! ClaudeHooks.connect(file)
         try! ClaudeHooks.connect(file)

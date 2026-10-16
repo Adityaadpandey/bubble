@@ -180,10 +180,15 @@ final class App: NSObject, NSApplicationDelegate {
             self.updateIcon()
         }
 
+        // bring your patterns and history along from when Bubble was called Notchy
+        let config = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        if !FileManager.default.fileExists(atPath: config.appendingPathComponent("bubble").path) {
+            try? FileManager.default.moveItem(at: config.appendingPathComponent("notchy"), to: config.appendingPathComponent("bubble"))
+        }
         if !FileManager.default.fileExists(atPath: patternsFile.path) {
             try? FileManager.default.createDirectory(at: patternsFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-            // bring your patterns along from when Bubble was called Notchy, or Perch and NotiApp before that
-            for name in ["notchy", "perch", "notiapp"] {
+            // bring your patterns along from when it was called Perch, or NotiApp before that
+            for name in ["perch", "notiapp"] {
                 let old = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/\(name)/patterns.txt")
                 if (try? FileManager.default.moveItem(at: old, to: patternsFile)) != nil { break }
             }
@@ -215,6 +220,11 @@ final class App: NSObject, NSApplicationDelegate {
         // Decided once, on the first launch of this version: already set up before onboarding existed means
         // nothing to walk you through. A brand new install stores false, so quitting halfway shows it again next time.
         let defaults = UserDefaults.standard
+        // Bubble used to be Notchy, and settings are stored under the bundle id. Copy them over on the first launch,
+        // leaving out the login item, which belonged to the old app and has to be set up again for this one.
+        if defaults.object(forKey: "onboarded") == nil, let old = defaults.persistentDomain(forName: "dev.notchy.Notchy") {
+            for (key, value) in old where key != "setUpLogin" { defaults.set(value, forKey: key) }
+        }
         if defaults.object(forKey: "onboarded") == nil { defaults.set(defaults.bool(forKey: "setUpLogin"), forKey: "onboarded") }
         // start at login the first time; after that the "Open at Login" switch in the ⋯ menu decides
         if !UserDefaults.standard.bool(forKey: "setUpLogin") {
