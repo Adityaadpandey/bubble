@@ -150,6 +150,8 @@ final class App: NSObject, NSApplicationDelegate {
     var reading = false
     let terminals = Terminals()
     var patterns: [NSRegularExpression] = []
+    var patternsText: String? // what `patterns` was compiled from
+    var screenAsleep = false  // nothing to read while the display is off
     var hotKey: HotKey?
     var settingsWindow: NSWindow?
     var appliedChoices = ""                   // Prefs.watchedChoices as of the last applyChoices()
@@ -162,6 +164,7 @@ final class App: NSObject, NSApplicationDelegate {
     var dashByHover = false
     var hoverSince: Date?  // when the mouse came to rest on the notch
     var awaySince: Date?   // when the mouse left a dashboard that hovering opened
+    var hoverTimer: Timer? // only alive while a hover is being timed
     var welcome: NotchPanel?  // the first-run onboarding, while it's up
     var usageWaits = false    // you skipped usage limits, so the Keychain stays untouched until you open the dashboard
 
@@ -172,7 +175,10 @@ final class App: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         updateIcon()
         makeNotchButton()
-        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.checkHover() }
+        // The mouse is only looked at while it moves; the fast timer runs just while a hover is being timed
+        // (see checkHover), so a Mac with nothing going on isn't woken 20 times a second.
+        NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in self?.checkHover() }
+        NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] e in self?.checkHover(); return e }
         dashSub = dashboard.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.placeDashboard() } }
         terminals.onDenied = { [weak self] denied in
             guard let self, self.dashboard.accessDenied != denied else { return }
@@ -241,11 +247,22 @@ final class App: NSObject, NSApplicationDelegate {
             self?.applyChoices()
         }
         Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in self?.checkForUpdate() }
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
-        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            guard let self, !self.usageWaits, self.welcome == nil else { return }
+        // a little give lets macOS batch our wake-ups with other apps' instead of waking the CPU just for us
+        let reader = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+        reader.tolerance = 0.25
+        // a closed lid or a sleeping display means no one is there to answer, so stop reading terminals until it's back
+        let ws = NSWorkspace.shared.notificationCenter
+        for (name, asleep) in [(NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.screenAsleep = asleep
+                if !asleep { self?.tick() }
+            }
+        }
+        let usage = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            guard let self, !self.usageWaits, !self.screenAsleep, self.welcome == nil else { return }
             self.refreshUsage()
         }
+        usage.tolerance = 30
         // the first time, nothing asks macOS for anything until the onboarding gets to it
         if defaults.bool(forKey: "onboarded") { refreshUsage() } else { showWelcome() }
     }
@@ -274,10 +291,11 @@ final class App: NSObject, NSApplicationDelegate {
 
     // Reads every tab in the background, then updates cards here on the main thread
     func tick() {
-        guard !reading, welcome == nil else { return }
+        guard !reading, !screenAsleep, welcome == nil else { return }
         reading = true
-        // ponytail: re-reads a tiny file every tick, cache by mtime if it ever shows up in a profile
-        patterns = loadPatterns((try? String(contentsOf: patternsFile, encoding: .utf8)) ?? "")
+        // the file is tiny, but compiling its patterns every second isn't free, so only redo that when the text changed
+        let text = (try? String(contentsOf: patternsFile, encoding: .utf8)) ?? ""
+        if text != patternsText { patternsText = text; patterns = loadPatterns(text) }
         let started = Date()
         terminals.readAll { [weak self] result in
             self?.reading = false
@@ -469,10 +487,22 @@ final class App: NSObject, NSApplicationDelegate {
     // way to the menu bar doesn't. If hovering opened it, it closes once the mouse has been off it for a
     // quarter of a second, unless you clicked into it by then (then Esc or clicking away closes it).
     //
-    // ponytail: this looks at the mouse 20 times a second rather than using tracking areas. Those got stuck
+    // ponytail: this checks the mouse position rather than using tracking areas. Those got stuck
     // after the dashboard covered the notch: they never saw the mouse leave, so never saw it come back.
-    // A cheap position check can't get out of step like that.
+    // A cheap position check can't get out of step like that. It runs whenever the mouse moves, and 20 times
+    // a second only while a hover is being timed or a hover-opened dashboard is waiting for the mouse to leave.
     func checkHover() {
+        lookAtMouse()
+        let timing = hoverSince != nil || (dashPanel != nil && dashByHover)
+        if timing, hoverTimer == nil {
+            hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.checkHover() }
+        } else if !timing {
+            hoverTimer?.invalidate()
+            hoverTimer = nil
+        }
+    }
+
+    private func lookAtMouse() {
         let mouse = NSEvent.mouseLocation
         let now = Date()
         if let panel = dashPanel {
