@@ -51,6 +51,24 @@ private let trimSet = CharacterSet.whitespaces.union(CharacterSet(charactersIn: 
 /// so "Overwrite? [y/N]" fires but an already answered "Overwrite? [y/N] y" does not.
 /// Free-text questions ("? Project name:", "Enter the API URL:") need the screen to have sat still
 /// for `quietFor` seconds, since a line ending in ":" could just be output still on its way.
+// Compiled once. Building a Regex inside these functions redid the parsing on every 1s read of every tab,
+// which was most of the app's idle CPU.
+private let passwordWord = #/pass(word|phrase|code)/#.ignoresCase()
+private let listCursor = #/^\s*([❯›>]|●\s)/#
+private let listQuestion = #/^[?◆◇]|›|\?$|\?\s*\(|select|choose|pick/#.ignoresCase()
+private let questionMark = #/^[?◆◇]\s*/#
+private let questionTail = #/\s+(›.*|\(.*)$/#
+private let checkedRow = #/(?:[◉◼☑✔✓]|\[[xX✔]\]|\(\*\))\s*(.+)/#
+private let uncheckedRow = #/(?:[◯◻☐]|\[ \]|\( \))\s*(.+)/#
+private let dotRow = #/[●○]\s*(.+)/#
+private let numberedRow = #/(❯\s*)?(\d+)\.\s+(.+)/#
+private let boxLabel = #/\[(.)\]\s*(.+)/#
+private let nextRow = #/(❯\s*)?(Next|Submit)/#
+private let tabStrip = #/←\s+(.+?)\s+→/#
+private let spinnerLine = #/^\s*\S\s+([A-Z][\w ]*…)\s*\((\d+[sm][^·)]*)/#
+private let askWord = #/\b(enter|type|name|value|choose|select|input|provide|specify|what|which)\b/#.ignoresCase()
+private let bulletLead = #/^[⏺●•]\s*/#
+
 func detectPrompt(screen: String, patterns: [NSRegularExpression], quietFor: TimeInterval = 0) -> Prompt? {
     let raw = screen.components(separatedBy: .newlines)
     // a line made only of ─ is a divider, kept as "" so context stops there
@@ -62,7 +80,7 @@ func detectPrompt(screen: String, patterns: [NSRegularExpression], quietFor: Tim
 
     guard let last = lines.last(where: { !$0.isEmpty }) else { return nil }
     // Never push password prompts onto the screen
-    if last.range(of: "pass(word|phrase|code)", options: [.regularExpression, .caseInsensitive]) != nil { return nil }
+    if last.contains(passwordWord) { return nil }
 
     let ns = last as NSString
     for re in patterns {
@@ -74,8 +92,7 @@ func detectPrompt(screen: String, patterns: [NSRegularExpression], quietFor: Tim
     }
 
     let asks = last.hasPrefix("? ") || last.hasSuffix("?")
-        || (last.hasSuffix(":") && last.range(of: #"\b(enter|type|name|value|choose|select|input|provide|specify|what|which)\b"#,
-                                             options: [.regularExpression, .caseInsensitive]) != nil)
+        || (last.hasSuffix(":") && last.contains(askWord))
     if quietFor >= 3, asks {
         return Prompt(kind: .text, line: last.hasPrefix("? ") ? String(last.dropFirst(2)) : last)
     }
@@ -93,7 +110,7 @@ private func cliList(_ raw: [String]) -> Prompt? {
     while let l = tail.last, l.trimmingCharacters(in: .whitespaces).isEmpty || l.trimmingCharacters(in: .whitespaces) == "└" {
         tail.removeLast()
     }
-    guard let c = tail.lastIndex(where: { $0.firstMatch(of: #/^\s*([❯›>]|●\s)/#) != nil }), c >= tail.count - 4 else { return nil }
+    guard let c = tail.lastIndex(where: { $0.firstMatch(of: listCursor) != nil }), c >= tail.count - 4 else { return nil }
 
     // where the option text starts on the cursor row, the other rows start in the same column
     let cur = Array(tail[c])
@@ -116,16 +133,16 @@ private func cliList(_ raw: [String]) -> Prompt? {
     guard hi > lo, lo > 0 else { return nil }
 
     var question = tail[lo - 1].trimmingCharacters(in: .whitespaces)
-    guard question.range(of: #"^[?◆◇]|›|\?$|\?\s*\(|select|choose|pick"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+    guard question.contains(listQuestion) else { return nil }
     // "? Which framework? (Use arrow keys)" reads as "Which framework?"
-    question = question.replacingOccurrences(of: #"^[?◆◇]\s*"#, with: "", options: .regularExpression)
-    question = question.replacingOccurrences(of: #"\s+(›.*|\(.*)$"#, with: "", options: .regularExpression)
+    question = question.replacing(questionMark, with: "")
+    question = question.replacing(questionTail, with: "")
 
     let rows = (lo...hi).map { i -> Row in
         let text = String(Array(tail[i])[col...]).trimmingCharacters(in: .whitespaces)
-        if let m = text.wholeMatch(of: #/(?:[◉◼☑✔✓]|\[[xX✔]\]|\(\*\))\s*(.+)/#) { return Row(label: String(m.1), checked: true) }
-        if let m = text.wholeMatch(of: #/(?:[◯◻☐]|\[ \]|\( \))\s*(.+)/#) { return Row(label: String(m.1), checked: false) }
-        if let m = text.wholeMatch(of: #/[●○]\s*(.+)/#) { return Row(label: String(m.1)) }
+        if let m = text.wholeMatch(of: checkedRow) { return Row(label: String(m.1), checked: true) }
+        if let m = text.wholeMatch(of: uncheckedRow) { return Row(label: String(m.1), checked: false) }
+        if let m = text.wholeMatch(of: dotRow) { return Row(label: String(m.1)) }
         return Row(label: text)
     }
     return Prompt(kind: .list, line: question, rows: rows, cursor: c - lo)
@@ -135,18 +152,18 @@ private func claudeMenu(_ lines: [String]) -> Prompt? {
     var rows: [Row] = [], cursor = -1, questionAt = -1, started = false
 
     for (i, l) in lines.enumerated() {
-        if let m = l.wholeMatch(of: #/(❯\s*)?(\d+)\.\s+(.+)/#), let n = Int(m.2) {
+        if let m = l.wholeMatch(of: numberedRow), let n = Int(m.2) {
             if n == 1 { rows = []; cursor = -1; started = true; questionAt = i - 1 }
             // skip a stray "7." inside a description line
             guard started, n == (rows.compactMap(\.number).last ?? 0) + 1 else { continue }
             var label = String(m.3), checked: Bool? = nil
-            if let box = label.wholeMatch(of: #/\[(.)\]\s*(.+)/#) {
+            if let box = label.wholeMatch(of: boxLabel) {
                 checked = box.1 != " "
                 label = String(box.2)
             }
             if m.1 != nil { cursor = rows.count }
             rows.append(Row(label: label, number: n, checked: checked))
-        } else if started, let m = l.wholeMatch(of: #/(❯\s*)?(Next|Submit)/#) {
+        } else if started, let m = l.wholeMatch(of: nextRow) {
             // multi-select has an unnumbered "Next" row the cursor can sit on
             if m.1 != nil { cursor = rows.count }
             rows.append(Row(label: String(m.2)))
@@ -158,7 +175,7 @@ private func claudeMenu(_ lines: [String]) -> Prompt? {
     var context: [String] = [], tabs: [QuestionTab] = []
     for l in lines[..<questionAt].reversed() {
         if l.isEmpty { break }
-        if let strip = l.wholeMatch(of: #/←\s+(.+?)\s+→/#) {
+        if let strip = l.wholeMatch(of: tabStrip) {
             tabs = String(strip.1).components(separatedBy: "  ").map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
                 .map { QuestionTab(label: String($0.dropFirst()).trimmingCharacters(in: .whitespaces), done: $0.hasPrefix("☒")) }
@@ -237,7 +254,7 @@ func loadPatterns(_ text: String) -> [NSRegularExpression] {
 /// "✽ Cerebrating… (39s · ↓ 3.1k tokens)" gives "Cerebrating… 39s". Nil when it isn't working.
 func claudeActivity(_ screen: String) -> String? {
     for l in screen.components(separatedBy: .newlines).suffix(15).reversed() {
-        if let m = l.firstMatch(of: #/^\s*\S\s+([A-Z][\w ]*…)\s*\((\d+[sm][^·)]*)/#) {
+        if let m = l.firstMatch(of: spinnerLine) {
             return "\(m.1) \(m.2.trimmingCharacters(in: .whitespaces))"
         }
     }
@@ -264,5 +281,5 @@ func finishedSummary(screen: String, lines count: Int = 3) -> [String] {
     return raw[..<end].map { $0.trimmingCharacters(in: trimSet) }
         .filter { !$0.isEmpty }
         .suffix(count)
-        .map { String($0.replacingOccurrences(of: #"^[⏺●•]\s*"#, with: "", options: .regularExpression).prefix(140)) }
+        .map { String($0.replacing(bulletLead, with: "").prefix(140)) }
 }
